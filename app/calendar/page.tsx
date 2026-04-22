@@ -2,40 +2,64 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { generateICS, downloadICS, formatTime, LIVE_STATUS_LABELS } from '@/lib/utils'
+import { generateICS, downloadICS, formatTime, LIVE_STATUS_LABELS, REMINDER_TYPES } from '@/lib/utils'
+import { getLiveCategories, getLiveStatuses, StatusEntry } from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/PageHeader'
-import { Calendar as CalIcon, ChevronLeft, ChevronRight, Download, List, Grid3X3 } from 'lucide-react'
+import { Modal } from '@/components/ui/Modal'
+import { useToast } from '@/components/ui/Toast'
+import { Calendar as CalIcon, ChevronLeft, ChevronRight, Download, List, Grid3X3, Plus, Music2, Bell } from 'lucide-react'
 import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek,
   addMonths, subMonths, addWeeks, subWeeks,
-  eachDayOfInterval, isSameMonth, isSameDay, parseISO, isToday
+  eachDayOfInterval, isSameMonth, parseISO, isToday
 } from 'date-fns'
 import { el } from 'date-fns/locale'
 import Link from 'next/link'
-import type { Live } from '@/lib/supabase'
+import type { Live, Client } from '@/lib/supabase'
 
 type ViewMode = 'month' | 'week' | 'list'
 
 const DAYS_GR = ['Δευ', 'Τρί', 'Τετ', 'Πέμ', 'Παρ', 'Σαβ', 'Κυρ']
 
 export default function CalendarPage() {
+  const { toast } = useToast()
   const [lives, setLives] = useState<Live[]>([])
+  const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [current, setCurrent] = useState(new Date())
   const [view, setView] = useState<ViewMode>('month')
+  const [categories, setCategories] = useState<string[]>([])
+  const [statusEntries, setStatusEntries] = useState<StatusEntry[]>([])
+
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null)
+
+  const emptyLiveForm = { title: '', date: '', category: '', client_id: '', city: '', status: 'confirmed', agreed_amount: '', deposit: '', notes: '' }
+  const [showNewLive, setShowNewLive] = useState(false)
+  const [liveForm, setLiveForm] = useState(emptyLiveForm)
+  const [liveSaving, setLiveSaving] = useState(false)
+
+  const emptyRemForm = { type: '', due_date: '', notes: '' }
+  const [showNewReminder, setShowNewReminder] = useState(false)
+  const [remForm, setRemForm] = useState(emptyRemForm)
+  const [remSaving, setRemSaving] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase
-      .from('lives')
-      .select('*, venues(name, city), clients(name)')
-      .order('date')
-    setLives((data || []) as Live[])
+    const [{ data: livesData }, { data: clientsData }] = await Promise.all([
+      supabase.from('lives').select('*, venues(name, city), clients(name)').order('date'),
+      supabase.from('clients').select('id,name').order('name'),
+    ])
+    setLives((livesData || []) as Live[])
+    setClients((clientsData || []) as Client[])
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    setCategories(getLiveCategories())
+    setStatusEntries(getLiveStatuses())
+  }, [load])
 
   function livesForDay(date: Date) {
     const str = format(date, 'yyyy-MM-dd')
@@ -47,7 +71,63 @@ export default function CalendarPage() {
     downloadICS(content, 'stavrou-lives.ics')
   }
 
-  // Navigation
+  function handleDayClick(day: Date) {
+    setSelectedDay(day)
+  }
+
+  function openNewLive() {
+    const dateStr = selectedDay ? format(selectedDay, 'yyyy-MM-dd') : ''
+    setLiveForm({ ...emptyLiveForm, date: dateStr })
+    setSelectedDay(null)
+    setShowNewLive(true)
+  }
+
+  function openNewReminder() {
+    const dateStr = selectedDay ? format(selectedDay, 'yyyy-MM-dd') : ''
+    setRemForm({ ...emptyRemForm, due_date: dateStr })
+    setSelectedDay(null)
+    setShowNewReminder(true)
+  }
+
+  async function handleCreateLive(e: React.FormEvent) {
+    e.preventDefault()
+    setLiveSaving(true)
+    const agreed = liveForm.agreed_amount ? parseFloat(liveForm.agreed_amount) : null
+    const dep = liveForm.deposit ? parseFloat(liveForm.deposit) : null
+    const { error } = await supabase.from('lives').insert({
+      title: liveForm.title,
+      date: liveForm.date || null,
+      category: liveForm.category || null,
+      client_id: liveForm.client_id || null,
+      city: liveForm.city || null,
+      status: liveForm.status,
+      agreed_amount: agreed,
+      deposit: dep,
+      balance: agreed !== null && dep !== null ? agreed - dep : agreed,
+      notes: liveForm.notes || null,
+    })
+    setLiveSaving(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Live δημιουργήθηκε!', 'success')
+    setShowNewLive(false)
+    load()
+  }
+
+  async function handleCreateReminder(e: React.FormEvent) {
+    e.preventDefault()
+    setRemSaving(true)
+    const { error } = await supabase.from('reminders').insert({
+      type: remForm.type || null,
+      due_date: remForm.due_date || null,
+      notes: remForm.notes || null,
+      is_done: false,
+    })
+    setRemSaving(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Υπενθύμιση προστέθηκε!', 'success')
+    setShowNewReminder(false)
+  }
+
   function prev() {
     if (view === 'month') setCurrent(subMonths(current, 1))
     else if (view === 'week') setCurrent(subWeeks(current, 1))
@@ -59,22 +139,21 @@ export default function CalendarPage() {
     else setCurrent(addMonths(current, 1))
   }
 
-  // Month grid
   const monthStart = startOfMonth(current)
   const monthEnd = endOfMonth(current)
   const calStart = startOfWeek(monthStart, { weekStartsOn: 1 })
   const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 })
   const calDays = eachDayOfInterval({ start: calStart, end: calEnd })
 
-  // Week
   const weekStart = startOfWeek(current, { weekStartsOn: 1 })
   const weekEnd = endOfWeek(current, { weekStartsOn: 1 })
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd })
 
-  // List: upcoming
   const listLives = lives
     .filter(l => l.date && l.date >= format(new Date(), 'yyyy-MM-dd'))
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+
+  const selectedDayLives = selectedDay ? livesForDay(selectedDay) : []
 
   return (
     <div>
@@ -111,7 +190,6 @@ export default function CalendarPage() {
       />
 
       <div className="p-6">
-        {/* Nav bar */}
         {view !== 'list' && (
           <div className="flex items-center justify-between mb-5">
             <button onClick={prev} className="btn btn-secondary btn-sm"><ChevronLeft size={16} /></button>
@@ -120,7 +198,6 @@ export default function CalendarPage() {
           </div>
         )}
 
-        {/* Legend */}
         <div className="flex gap-4 mb-4 flex-wrap">
           {[
             { s: 'confirmed', label: 'Επιβεβαιωμένο' },
@@ -137,26 +214,175 @@ export default function CalendarPage() {
         </div>
 
         {loading ? <Spinner /> : view === 'month' ? (
-          <MonthView calDays={calDays} current={current} livesForDay={livesForDay} />
+          <MonthView calDays={calDays} current={current} livesForDay={livesForDay} onDayClick={handleDayClick} />
         ) : view === 'week' ? (
-          <WeekView weekDays={weekDays} livesForDay={livesForDay} />
+          <WeekView weekDays={weekDays} livesForDay={livesForDay} onDayClick={handleDayClick} />
         ) : (
           <ListView lives={listLives} />
         )}
       </div>
+
+      {/* Day Popup */}
+      <Modal
+        open={!!selectedDay}
+        onClose={() => setSelectedDay(null)}
+        title={selectedDay ? format(selectedDay, 'd MMMM yyyy', { locale: el }) : ''}
+        size="sm"
+      >
+        <div className="space-y-4">
+          {selectedDayLives.length > 0 ? (
+            <div className="space-y-2">
+              {selectedDayLives.map(live => (
+                <Link
+                  key={live.id}
+                  href={`/lives/${live.id}`}
+                  onClick={() => setSelectedDay(null)}
+                  className="flex items-center gap-3 p-3 rounded-xl"
+                  style={{ background: 'var(--bg-overlay)', textDecoration: 'none', display: 'flex' }}
+                >
+                  <div className={`cal-event ${live.status}`} style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, padding: 0 }} />
+                  <div className="flex-1 min-w-0">
+                    <p style={{ fontWeight: 700, fontSize: '0.88rem' }} className="truncate">{live.title}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {live.time_start ? formatTime(live.time_start) + ' · ' : ''}
+                      {live.venues?.name || live.city || LIVE_STATUS_LABELS[live.status]}
+                    </p>
+                  </div>
+                  <span className={`badge badge-${live.status}`} style={{ flexShrink: 0 }}>
+                    {LIVE_STATUS_LABELS[live.status]}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '8px 0' }}>
+              Δεν υπάρχουν lives για αυτή την ημέρα
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+            <button onClick={openNewLive} className="btn btn-primary flex-1" style={{ justifyContent: 'center' }}>
+              <Music2 size={14} />Νέο Live
+            </button>
+            <button onClick={openNewReminder} className="btn btn-secondary flex-1" style={{ justifyContent: 'center' }}>
+              <Bell size={14} />Νέα Υπενθύμιση
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* New Live Modal */}
+      <Modal open={showNewLive} onClose={() => setShowNewLive(false)} title="Νέο Live">
+        <form onSubmit={handleCreateLive}>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="col-span-2">
+              <label className="label">Τίτλος *</label>
+              <input required className="input" placeholder="π.χ. Γάμος Παπαδάκη" value={liveForm.title}
+                onChange={e => setLiveForm({ ...liveForm, title: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Ημερομηνία</label>
+              <input type="date" className="input" value={liveForm.date}
+                onChange={e => setLiveForm({ ...liveForm, date: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Κατηγορία</label>
+              <select className="select" value={liveForm.category}
+                onChange={e => setLiveForm({ ...liveForm, category: e.target.value })}>
+                <option value="">— Επιλογή —</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Πελάτης</label>
+              <select className="select" value={liveForm.client_id}
+                onChange={e => setLiveForm({ ...liveForm, client_id: e.target.value })}>
+                <option value="">— Κανείς —</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Πόλη</label>
+              <input className="input" value={liveForm.city}
+                onChange={e => setLiveForm({ ...liveForm, city: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Κατάσταση</label>
+              <select className="select" value={liveForm.status}
+                onChange={e => setLiveForm({ ...liveForm, status: e.target.value })}>
+                {statusEntries.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="label">Ποσό (€)</label>
+              <input type="number" step="0.01" className="input" value={liveForm.agreed_amount}
+                onChange={e => setLiveForm({ ...liveForm, agreed_amount: e.target.value })} />
+            </div>
+            <div>
+              <label className="label">Προκαταβολή (€)</label>
+              <input type="number" step="0.01" className="input" value={liveForm.deposit}
+                onChange={e => setLiveForm({ ...liveForm, deposit: e.target.value })} />
+            </div>
+            <div className="col-span-2">
+              <label className="label">Σημειώσεις</label>
+              <textarea className="textarea" rows={2} value={liveForm.notes}
+                onChange={e => setLiveForm({ ...liveForm, notes: e.target.value })} />
+            </div>
+          </div>
+          <div className="flex gap-3 justify-end mt-5">
+            <button type="button" onClick={() => setShowNewLive(false)} className="btn btn-secondary">Ακύρωση</button>
+            <button type="submit" disabled={liveSaving} className="btn btn-primary">
+              {liveSaving ? 'Αποθήκευση...' : 'Δημιουργία'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* New Reminder Modal */}
+      <Modal open={showNewReminder} onClose={() => setShowNewReminder(false)} title="Νέα Υπενθύμιση" size="sm">
+        <form onSubmit={handleCreateReminder} className="space-y-4">
+          <div>
+            <label className="label">Τύπος</label>
+            <select className="select" value={remForm.type}
+              onChange={e => setRemForm({ ...remForm, type: e.target.value })}>
+              <option value="">—</option>
+              {REMINDER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label">Ημερομηνία</label>
+            <input type="date" className="input" value={remForm.due_date}
+              onChange={e => setRemForm({ ...remForm, due_date: e.target.value })} />
+          </div>
+          <div>
+            <label className="label">Σημειώσεις</label>
+            <textarea className="textarea" rows={3} value={remForm.notes}
+              onChange={e => setRemForm({ ...remForm, notes: e.target.value })} />
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setShowNewReminder(false)} className="btn btn-secondary">Ακύρωση</button>
+            <button type="submit" disabled={remSaving} className="btn btn-primary">
+              {remSaving ? 'Αποθήκευση...' : 'Προσθήκη'}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   )
 }
 
-function MonthView({ calDays, current, livesForDay }: {
-  calDays: Date[]; current: Date; livesForDay: (d: Date) => Live[]
+function MonthView({ calDays, current, livesForDay, onDayClick }: {
+  calDays: Date[]
+  current: Date
+  livesForDay: (d: Date) => Live[]
+  onDayClick: (d: Date) => void
 }) {
   return (
     <div>
-      {/* Day headers */}
       <div className="grid grid-cols-7 gap-1.5 mb-1.5">
         {DAYS_GR.map(d => (
-          <div key={d} className="text-center py-2" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+          <div key={d} className="text-center py-2"
+            style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
             {d}
           </div>
         ))}
@@ -167,7 +393,12 @@ function MonthView({ calDays, current, livesForDay }: {
           const inMonth = isSameMonth(day, current)
           const today = isToday(day)
           return (
-            <div key={day.toString()} className={`cal-day ${!inMonth ? 'other-month' : ''} ${today ? 'today' : ''}`}>
+            <div
+              key={day.toString()}
+              className={`cal-day ${!inMonth ? 'other-month' : ''} ${today ? 'today' : ''}`}
+              onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) onDayClick(day) }}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="flex items-center justify-between mb-1">
                 <span style={{
                   fontSize: '0.78rem',
@@ -199,7 +430,11 @@ function MonthView({ calDays, current, livesForDay }: {
   )
 }
 
-function WeekView({ weekDays, livesForDay }: { weekDays: Date[]; livesForDay: (d: Date) => Live[] }) {
+function WeekView({ weekDays, livesForDay, onDayClick }: {
+  weekDays: Date[]
+  livesForDay: (d: Date) => Live[]
+  onDayClick: (d: Date) => void
+}) {
   return (
     <div className="grid grid-cols-7 gap-3">
       {weekDays.map(day => {
@@ -207,23 +442,26 @@ function WeekView({ weekDays, livesForDay }: { weekDays: Date[]; livesForDay: (d
         const today = isToday(day)
         return (
           <div key={day.toString()}>
-            <div className="text-center mb-2">
+            <div className="text-center mb-2" style={{ cursor: 'pointer' }} onClick={() => onDayClick(day)}>
               <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                 {format(day, 'EEE', { locale: el })}
               </div>
               <div style={{
                 fontSize: '1.3rem', fontWeight: 800,
                 color: today ? 'var(--terra)' : 'var(--text-primary)',
-                fontFamily: 'var(--font-display)'
+                fontFamily: 'var(--font-display)',
               }}>
                 {format(day, 'd')}
               </div>
             </div>
-            <div className="space-y-1.5 min-h-[200px] p-2 rounded-xl border"
-              style={{ borderColor: today ? 'var(--terra)' : 'var(--border)', background: 'var(--bg-raised)' }}>
+            <div
+              className="space-y-1.5 min-h-[200px] p-2 rounded-xl border"
+              style={{ borderColor: today ? 'var(--terra)' : 'var(--border)', background: 'var(--bg-raised)', cursor: 'pointer' }}
+              onClick={(e) => { if (!(e.target as HTMLElement).closest('a')) onDayClick(day) }}
+            >
               {dayLives.map(live => (
                 <Link key={live.id} href={`/lives/${live.id}`}
-                  className={`cal-event block`}
+                  className="cal-event block"
                   style={{
                     whiteSpace: 'normal', fontSize: '0.72rem', padding: '6px 8px',
                     textDecoration: 'none',
@@ -257,7 +495,6 @@ function ListView({ lives }: { lives: Live[] }) {
     </div>
   )
 
-  // Group by month
   const grouped: Record<string, Live[]> = {}
   for (const live of lives) {
     const key = live.date ? format(parseISO(live.date), 'MMMM yyyy', { locale: el }) : 'Άγνωστο'
