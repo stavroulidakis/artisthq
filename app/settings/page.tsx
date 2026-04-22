@@ -47,6 +47,7 @@ export default function SettingsPage() {
   }
   const [venueForm, setVenueForm] = useState(emptyVenueForm)
 
+  // Lists state
   const [roles, setRoles] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [statuses, setStatuses] = useState<StatusEntry[]>([])
@@ -85,7 +86,7 @@ export default function SettingsPage() {
   async function handleAvatarUpload(file: File) {
     setUploadingAvatar(true)
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `artist-avatar.${ext}`
+    const path = `artist-avatar-${Date.now()}.${ext}`
     const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
     if (uploadError) { toast('Σφάλμα upload: ' + uploadError.message, 'error'); setUploadingAvatar(false); return }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
@@ -169,6 +170,7 @@ export default function SettingsPage() {
     load()
   }
 
+  // --- List handlers ---
   function addRole() {
     const val = newRole.trim()
     if (!val || roles.includes(val)) return
@@ -225,6 +227,7 @@ export default function SettingsPage() {
         {activeTab === 'profile' && (
           <div className="max-w-lg">
             <form onSubmit={handleSaveProfile} className="card space-y-4">
+              {/* Avatar upload */}
               <div className="flex flex-col items-center pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
                 <div className="relative cursor-pointer mb-2" onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}>
                   <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center"
@@ -310,6 +313,7 @@ export default function SettingsPage() {
 
         {activeTab === 'lists' && (
           <div className="space-y-6 max-w-xl">
+            {/* Musician Roles */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -335,6 +339,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Live Categories */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -360,6 +365,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Live Statuses */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
@@ -424,8 +430,14 @@ export default function SettingsPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog open={!!deleteVenueId} onClose={() => setDeleteVenueId(null)} onConfirm={handleDeleteVenue}
-        loading={deleting} title="Διαγραφή Χώρου" message="Ο χώρος θα διαγραφεί μόνιμα." />
+      <ConfirmDialog
+        open={!!deleteVenueId}
+        onClose={() => setDeleteVenueId(null)}
+        onConfirm={handleDeleteVenue}
+        loading={deleting}
+        title="Διαγραφή Χώρου"
+        message="Ο χώρος θα διαγραφεί μόνιμα."
+      />
     </div>
   )
 }
