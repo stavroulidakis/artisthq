@@ -143,3 +143,14 @@ export interface Reminder {
   created_at: string
   lives?: { title: string; date?: string | null } | null
 }
+export interface Project {
+  id: string
+  title: string
+  type?: string
+  date?: string
+  budget?: number
+  status?: string
+  expenses?: Record<string, number>
+  notes?: string
+  created_at: string
+}

@@ -2,15 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
 import {
   LayoutDashboard, Calendar, Music2, Users, UserCheck,
-  BarChart3, Bell, Settings, Mic2
+  BarChart3, Bell, Settings, Mic2, Film
 } from 'lucide-react'
 
 const NAV = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/calendar', label: 'Ημερολόγιο', icon: Calendar },
   { href: '/lives', label: 'Lives', icon: Music2 },
+  { href: '/projects', label: 'Projects', icon: Film },
   { href: '/clients', label: 'Πελάτες', icon: Users },
   { href: '/musicians', label: 'Μουσικοί', icon: UserCheck },
   { href: '/reports', label: 'Αναφορές', icon: BarChart3 },
@@ -20,15 +23,25 @@ const NAV = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+
+  useEffect(() => {
+    supabase.from('settings').select('avatar_url').single().then(({ data }) => {
+      if (data?.avatar_url) setAvatarUrl(data.avatar_url)
+    })
+  }, [])
 
   return (
     <aside className="sidebar">
       {/* Brand */}
       <div className="px-4 py-5 border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{ background: 'linear-gradient(135deg, var(--terra-dark), var(--terra))' }}>
-            <Mic2 size={17} color="white" />
+          <div className="w-9 h-9 rounded-xl flex-shrink-0 overflow-hidden flex items-center justify-center"
+            style={avatarUrl ? {} : { background: 'linear-gradient(135deg, var(--terra-dark), var(--terra))' }}>
+            {avatarUrl
+              ? <img src={avatarUrl} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <Mic2 size={17} color="white" />
+            }
           </div>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.2, color: 'var(--text-primary)' }}>

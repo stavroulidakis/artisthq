@@ -8,6 +8,9 @@ import {
   saveMusicianRoles, saveLiveCategories, saveLiveStatuses,
   getStatusBadgeClass, StatusEntry,
   DEFAULT_ROLES, DEFAULT_CATEGORIES, DEFAULT_STATUSES,
+  getProjectTypes, getProjectStatuses, getExpenseCats,
+  saveProjectTypes, saveProjectStatuses, saveExpenseCats,
+  DEFAULT_PROJECT_TYPES, DEFAULT_PROJECT_STATUSES, DEFAULT_EXPENSE_CATS,
 } from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/PageHeader'
@@ -55,6 +58,14 @@ export default function SettingsPage() {
   const [newCategory, setNewCategory] = useState('')
   const [newStatusLabel, setNewStatusLabel] = useState('')
 
+  // Project lists state
+  const [projTypes, setProjTypes] = useState<string[]>([])
+  const [projStatuses, setProjStatuses] = useState<string[]>([])
+  const [expCats, setExpCats] = useState<string[]>([])
+  const [newProjType, setNewProjType] = useState('')
+  const [newProjStatus, setNewProjStatus] = useState('')
+  const [newExpCat, setNewExpCat] = useState('')
+
   const load = useCallback(async () => {
     setLoading(true)
     const [{ data: s }, { data: v }] = await Promise.all([
@@ -81,6 +92,9 @@ export default function SettingsPage() {
     setRoles(getMusicianRoles())
     setCategories(getLiveCategories())
     setStatuses(getLiveStatuses())
+    setProjTypes(getProjectTypes())
+    setProjStatuses(getProjectStatuses())
+    setExpCats(getExpenseCats())
   }, [load])
 
   async function handleAvatarUpload(file: File) {
@@ -207,6 +221,42 @@ export default function SettingsPage() {
   }
   function resetStatuses() { setStatuses(DEFAULT_STATUSES); saveLiveStatuses(DEFAULT_STATUSES) }
 
+  function addProjType() {
+    const val = newProjType.trim()
+    if (!val || projTypes.includes(val)) return
+    const updated = [...projTypes, val]
+    setProjTypes(updated); saveProjectTypes(updated); setNewProjType('')
+  }
+  function removeProjType(i: number) {
+    const updated = projTypes.filter((_, j) => j !== i)
+    setProjTypes(updated); saveProjectTypes(updated)
+  }
+  function resetProjTypes() { setProjTypes(DEFAULT_PROJECT_TYPES); saveProjectTypes(DEFAULT_PROJECT_TYPES) }
+
+  function addProjStatus() {
+    const val = newProjStatus.trim()
+    if (!val || projStatuses.includes(val)) return
+    const updated = [...projStatuses, val]
+    setProjStatuses(updated); saveProjectStatuses(updated); setNewProjStatus('')
+  }
+  function removeProjStatus(i: number) {
+    const updated = projStatuses.filter((_, j) => j !== i)
+    setProjStatuses(updated); saveProjectStatuses(updated)
+  }
+  function resetProjStatuses() { setProjStatuses(DEFAULT_PROJECT_STATUSES); saveProjectStatuses(DEFAULT_PROJECT_STATUSES) }
+
+  function addExpCat() {
+    const val = newExpCat.trim()
+    if (!val || expCats.includes(val)) return
+    const updated = [...expCats, val]
+    setExpCats(updated); saveExpenseCats(updated); setNewExpCat('')
+  }
+  function removeExpCat(i: number) {
+    const updated = expCats.filter((_, j) => j !== i)
+    setExpCats(updated); saveExpenseCats(updated)
+  }
+  function resetExpCats() { setExpCats(DEFAULT_EXPENSE_CATS); saveExpenseCats(DEFAULT_EXPENSE_CATS) }
+
   if (loading) return <Spinner />
 
   return (
@@ -227,7 +277,6 @@ export default function SettingsPage() {
         {activeTab === 'profile' && (
           <div className="max-w-lg">
             <form onSubmit={handleSaveProfile} className="card space-y-4">
-              {/* Avatar upload */}
               <div className="flex flex-col items-center pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
                 <div className="relative cursor-pointer mb-2" onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}>
                   <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center"
@@ -391,6 +440,84 @@ export default function SettingsPage() {
                   onChange={e => setNewStatusLabel(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addStatus() } }} />
                 <button onClick={addStatus} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
+              </div>
+            </div>
+
+            {/* Project Types */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <List size={15} color="var(--sea)" />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Τύποι Projects</h3>
+                </div>
+                <button onClick={resetProjTypes} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
+              </div>
+              <div className="space-y-1 mb-3">
+                {projTypes.map((t, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{t}</span>
+                    <button onClick={() => removeProjType(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                  </div>
+                ))}
+                {projTypes.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν τύποι.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input className="input" placeholder="π.χ. Ντοκιμαντέρ" value={newProjType}
+                  onChange={e => setNewProjType(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProjType() } }} />
+                <button onClick={addProjType} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
+              </div>
+            </div>
+
+            {/* Project Statuses */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <List size={15} color="var(--terra)" />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Statuses Projects</h3>
+                </div>
+                <button onClick={resetProjStatuses} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
+              </div>
+              <div className="space-y-1 mb-3">
+                {projStatuses.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{s}</span>
+                    <button onClick={() => removeProjStatus(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                  </div>
+                ))}
+                {projStatuses.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν statuses.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input className="input" placeholder="π.χ. Παγωμένο" value={newProjStatus}
+                  onChange={e => setNewProjStatus(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProjStatus() } }} />
+                <button onClick={addProjStatus} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
+              </div>
+            </div>
+
+            {/* Expense Categories */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <List size={15} color="var(--amber)" />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Κατηγορίες Εξόδων Projects</h3>
+                </div>
+                <button onClick={resetExpCats} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
+              </div>
+              <div className="space-y-1 mb-3">
+                {expCats.map((c, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{c}</span>
+                    <button onClick={() => removeExpCat(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                  </div>
+                ))}
+                {expCats.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν κατηγορίες.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input className="input" placeholder="π.χ. Licensing" value={newExpCat}
+                  onChange={e => setNewExpCat(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addExpCat() } }} />
+                <button onClick={addExpCat} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
               </div>
             </div>
           </div>
