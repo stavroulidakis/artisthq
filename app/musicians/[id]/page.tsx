@@ -65,7 +65,7 @@ export default function MusiciansPage() {
   async function handleAvatarUpload(file: File, musicianId: string) {
     setUploadingAvatar(true)
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `musician-${musicianId}.${ext}`
+    const path = `musician-${musicianId}-${Date.now()}.${ext}`
     const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
     if (uploadError) { toast('Σφάλμα upload: ' + uploadError.message, 'error'); setUploadingAvatar(false); return }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
@@ -159,7 +159,6 @@ export default function MusiciansPage() {
                       className="table-row"
                       style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
                     >
-                      {/* Avatar + Name */}
                       <td className="px-4 py-2.5">
                         <div className="flex items-center gap-2.5">
                           <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0"
@@ -173,26 +172,22 @@ export default function MusiciansPage() {
                         </div>
                       </td>
 
-                      {/* Role */}
                       <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                         {m.role || '—'}
                       </td>
 
-                      {/* Participations */}
                       <td className="px-4 py-2.5">
                         <span style={{ fontWeight: 800, color: 'var(--sea)', fontSize: '0.9rem' }}>
                           {stats?.count ?? 0}
                         </span>
                       </td>
 
-                      {/* Total fees */}
                       <td className="px-4 py-2.5">
                         <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: '0.9rem' }}>
                           {stats ? formatCurrency(stats.total) : '—'}
                         </span>
                       </td>
 
-                      {/* Status */}
                       <td className="px-4 py-2.5">
                         <span style={{
                           fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 6,
@@ -203,7 +198,6 @@ export default function MusiciansPage() {
                         </span>
                       </td>
 
-                      {/* Actions */}
                       <td className="px-4 py-2.5">
                         <div className="flex gap-1 justify-end">
                           <button className="btn btn-ghost btn-xs" onClick={() => router.push(`/musicians/${m.id}`)}><Eye size={13} /></button>
