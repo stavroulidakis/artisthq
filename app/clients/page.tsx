@@ -57,15 +57,17 @@ export default function ClientsPage() {
       ? await supabase.from('clients').update(payload).eq('id', editClient.id)
       : await supabase.from('clients').insert(payload)
     setSaving(false)
-    if (error) { toast('Σφάλμα', 'error'); return }
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
     toast(editClient ? 'Ενημερώθηκε!' : 'Πελάτης προστέθηκε!', 'success')
     setShowCreate(false); load()
   }
 
   async function handleDelete() {
     if (!deleteId) return; setDeleting(true)
-    await supabase.from('clients').delete().eq('id', deleteId)
-    setDeleting(false); toast('Διαγράφηκε', 'success'); setDeleteId(null); load()
+    const { error } = await supabase.from('clients').delete().eq('id', deleteId)
+    setDeleting(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Διαγράφηκε', 'success'); setDeleteId(null); load()
   }
 
   const filtered = clients.filter(c =>

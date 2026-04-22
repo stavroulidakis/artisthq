@@ -3,12 +3,18 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { REGIONS } from '@/lib/utils'
+import {
+  getMusicianRoles, getLiveCategories, getLiveStatuses,
+  saveMusicianRoles, saveLiveCategories, saveLiveStatuses,
+  getStatusBadgeClass, StatusEntry,
+  DEFAULT_ROLES, DEFAULT_CATEGORIES, DEFAULT_STATUSES,
+} from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
-import { Settings, Save, Plus, Trash2, Edit2, MapPin, Building2, Mic2 } from 'lucide-react'
+import { Settings, Save, Plus, Trash2, Edit2, MapPin, Building2, Mic2, RotateCcw, List } from 'lucide-react'
 import type { Venue } from '@/lib/supabase'
 
 const VENUE_TYPES = ['Κτήμα', 'Ξενοδοχείο', 'Εστιατόριο', 'Κλαμπ', 'Υπαίθριο', 'Αίθουσα', 'Άλλο']
@@ -19,7 +25,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false)
   const [settingsId, setSettingsId] = useState<string | null>(null)
   const [venues, setVenues] = useState<Venue[]>([])
-  const [activeTab, setActiveTab] = useState<'profile' | 'venues'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'venues' | 'lists'>('profile')
   const [showVenueModal, setShowVenueModal] = useState(false)
   const [editVenue, setEditVenue] = useState<Venue | null>(null)
   const [deleteVenueId, setDeleteVenueId] = useState<string | null>(null)
@@ -29,14 +35,22 @@ export default function SettingsPage() {
   const [form, setForm] = useState({
     artist_name: 'Κώστας Σταυρουλιδάκης',
     artist_type: 'Κρητικός Μουσικός',
-    phone: '', email: '', address: '', notes: ''
+    phone: '', email: '', address: '',
   })
 
   const emptyVenueForm = {
     name: '', address: '', city: '', region: '',
-    capacity: '', type: '', contact_person: '', phone: '', notes: ''
+    capacity: '', type: '', contact_person: '', phone: '', notes: '',
   }
   const [venueForm, setVenueForm] = useState(emptyVenueForm)
+
+  // Lists state
+  const [roles, setRoles] = useState<string[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [statuses, setStatuses] = useState<StatusEntry[]>([])
+  const [newRole, setNewRole] = useState('')
+  const [newCategory, setNewCategory] = useState('')
+  const [newStatusLabel, setNewStatusLabel] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -52,17 +66,22 @@ export default function SettingsPage() {
         phone: s.phone || '',
         email: s.email || '',
         address: s.address || '',
-        notes: s.notes || '',
       })
     }
     setVenues((v || []) as Venue[])
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    setRoles(getMusicianRoles())
+    setCategories(getLiveCategories())
+    setStatuses(getLiveStatuses())
+  }, [load])
 
   async function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+    e.preventDefault()
+    setSaving(true)
     const payload = {
       artist_name: form.artist_name,
       artist_type: form.artist_type,
@@ -70,13 +89,17 @@ export default function SettingsPage() {
       email: form.email || null,
       address: form.address || null,
     }
+    let error
     if (settingsId) {
-      await supabase.from('settings').update(payload).eq('id', settingsId)
+      ;({ error } = await supabase.from('settings').update(payload).eq('id', settingsId))
     } else {
-      const { data } = await supabase.from('settings').insert(payload).select().single()
+      const { data, error: err } = await supabase.from('settings').insert(payload).select().single()
       if (data) setSettingsId(data.id)
+      error = err
     }
-    setSaving(false); toast('Αποθηκεύτηκε!', 'success')
+    setSaving(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Αποθηκεύτηκε!', 'success')
   }
 
   function openCreateVenue() { setVenueForm(emptyVenueForm); setEditVenue(null); setShowVenueModal(true) }
@@ -85,13 +108,14 @@ export default function SettingsPage() {
       name: v.name, address: v.address || '', city: v.city || '',
       region: v.region || '', capacity: v.capacity?.toString() || '',
       type: v.type || '', contact_person: v.contact_person || '',
-      phone: v.phone || '', notes: v.notes || ''
+      phone: v.phone || '', notes: v.notes || '',
     })
     setEditVenue(v); setShowVenueModal(true)
   }
 
   async function handleSaveVenue(e: React.FormEvent) {
-    e.preventDefault(); setVenueSaving(true)
+    e.preventDefault()
+    setVenueSaving(true)
     const payload = {
       name: venueForm.name,
       address: venueForm.address || null,
@@ -107,7 +131,7 @@ export default function SettingsPage() {
       ? await supabase.from('venues').update(payload).eq('id', editVenue.id)
       : await supabase.from('venues').insert(payload)
     setVenueSaving(false)
-    if (error) { toast('Σφάλμα', 'error'); return }
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
     toast(editVenue ? 'Χώρος ενημερώθηκε!' : 'Χώρος προστέθηκε!', 'success')
     setShowVenueModal(false); load()
   }
@@ -115,12 +139,50 @@ export default function SettingsPage() {
   async function handleDeleteVenue() {
     if (!deleteVenueId) return
     setDeleting(true)
-    await supabase.from('venues').delete().eq('id', deleteVenueId)
+    const { error } = await supabase.from('venues').delete().eq('id', deleteVenueId)
     setDeleting(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
     setDeleteVenueId(null)
     toast('Χώρος διαγράφηκε', 'success')
     load()
   }
+
+  // --- List handlers ---
+  function addRole() {
+    const val = newRole.trim()
+    if (!val || roles.includes(val)) return
+    const updated = [...roles, val]
+    setRoles(updated); saveMusicianRoles(updated); setNewRole('')
+  }
+  function removeRole(i: number) {
+    const updated = roles.filter((_, j) => j !== i)
+    setRoles(updated); saveMusicianRoles(updated)
+  }
+  function resetRoles() { setRoles(DEFAULT_ROLES); saveMusicianRoles(DEFAULT_ROLES) }
+
+  function addCategory() {
+    const val = newCategory.trim()
+    if (!val || categories.includes(val)) return
+    const updated = [...categories, val]
+    setCategories(updated); saveLiveCategories(updated); setNewCategory('')
+  }
+  function removeCategory(i: number) {
+    const updated = categories.filter((_, j) => j !== i)
+    setCategories(updated); saveLiveCategories(updated)
+  }
+  function resetCategories() { setCategories(DEFAULT_CATEGORIES); saveLiveCategories(DEFAULT_CATEGORIES) }
+
+  function addStatus() {
+    const label = newStatusLabel.trim()
+    if (!label || statuses.some(s => s.label === label)) return
+    const updated = [...statuses, { value: label, label }]
+    setStatuses(updated); saveLiveStatuses(updated); setNewStatusLabel('')
+  }
+  function removeStatus(i: number) {
+    const updated = statuses.filter((_, j) => j !== i)
+    setStatuses(updated); saveLiveStatuses(updated)
+  }
+  function resetStatuses() { setStatuses(DEFAULT_STATUSES); saveLiveStatuses(DEFAULT_STATUSES) }
 
   if (loading) return <Spinner />
 
@@ -128,14 +190,15 @@ export default function SettingsPage() {
     <div>
       <PageHeader
         title="Ρυθμίσεις"
-        subtitle="Προφίλ καλλιτέχνη & Χώροι"
+        subtitle="Προφίλ καλλιτέχνη, Χώροι & Λίστες"
         icon={<Settings size={18} color="var(--terra)" />}
       />
 
       <div className="p-6">
-        <div className="tab-bar mb-6" style={{ maxWidth: 320 }}>
+        <div className="tab-bar mb-6" style={{ maxWidth: 480 }}>
           <button onClick={() => setActiveTab('profile')} className={`tab ${activeTab === 'profile' ? 'active' : ''}`}>Προφίλ</button>
           <button onClick={() => setActiveTab('venues')} className={`tab ${activeTab === 'venues' ? 'active' : ''}`}>Χώροι ({venues.length})</button>
+          <button onClick={() => setActiveTab('lists')} className={`tab ${activeTab === 'lists' ? 'active' : ''}`}>Λίστες</button>
         </div>
 
         {activeTab === 'profile' && (
@@ -207,6 +270,115 @@ export default function SettingsPage() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {activeTab === 'lists' && (
+          <div className="space-y-6 max-w-xl">
+            {/* Musician Roles */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <List size={16} color="var(--sea)" />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Ρόλοι Μουσικών</h3>
+                </div>
+                <button onClick={resetRoles} className="btn btn-ghost btn-xs" title="Επαναφορά προεπιλογών">
+                  <RotateCcw size={12} /> Προεπιλογές
+                </button>
+              </div>
+              <div className="space-y-2 mb-4">
+                {roles.map((role, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex-1 py-2 px-3 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{role}</span>
+                    <button onClick={() => removeRole(i)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
+                  </div>
+                ))}
+                {roles.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν ρόλοι.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="input"
+                  placeholder="π.χ. Ακορντεονίστας"
+                  value={newRole}
+                  onChange={e => setNewRole(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRole() } }}
+                />
+                <button onClick={addRole} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                  <Plus size={14} />Προσθήκη
+                </button>
+              </div>
+            </div>
+
+            {/* Live Categories */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <List size={16} color="var(--terra)" />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Κατηγορίες Live</h3>
+                </div>
+                <button onClick={resetCategories} className="btn btn-ghost btn-xs" title="Επαναφορά προεπιλογών">
+                  <RotateCcw size={12} /> Προεπιλογές
+                </button>
+              </div>
+              <div className="space-y-2 mb-4">
+                {categories.map((cat, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex-1 py-2 px-3 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{cat}</span>
+                    <button onClick={() => removeCategory(i)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
+                  </div>
+                ))}
+                {categories.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν κατηγορίες.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="input"
+                  placeholder="π.χ. Χριστουγεννιάτικη Εκδήλωση"
+                  value={newCategory}
+                  onChange={e => setNewCategory(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory() } }}
+                />
+                <button onClick={addCategory} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                  <Plus size={14} />Προσθήκη
+                </button>
+              </div>
+            </div>
+
+            {/* Live Statuses */}
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <List size={16} color="var(--amber)" />
+                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Καταστάσεις Live</h3>
+                </div>
+                <button onClick={resetStatuses} className="btn btn-ghost btn-xs" title="Επαναφορά προεπιλογών">
+                  <RotateCcw size={12} /> Προεπιλογές
+                </button>
+              </div>
+              <div className="space-y-2 mb-4">
+                {statuses.map((s, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className={`badge ${getStatusBadgeClass(s.value)}`}>{s.label}</span>
+                    <span className="flex-1" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      {s.value !== s.label ? `(${s.value})` : ''}
+                    </span>
+                    <button onClick={() => removeStatus(i)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
+                  </div>
+                ))}
+                {statuses.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν καταστάσεις.</p>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  className="input"
+                  placeholder="π.χ. Αναβλήθηκε"
+                  value={newStatusLabel}
+                  onChange={e => setNewStatusLabel(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addStatus() } }}
+                />
+                <button onClick={addStatus} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
+                  <Plus size={14} />Προσθήκη
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

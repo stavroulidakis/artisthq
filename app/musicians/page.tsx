@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, MUSICIAN_ROLES } from '@/lib/utils'
+import { getMusicianRoles } from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { EmptyState, Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
@@ -27,6 +28,7 @@ export default function MusiciansPage() {
 
   const emptyForm = { name: '', role: '', phone: '', email: '', default_fee: '', notes: '', is_active: true }
   const [form, setForm] = useState<any>(emptyForm)
+  const [musicianRoles, setMusicianRoles] = useState<string[]>(MUSICIAN_ROLES)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -46,6 +48,7 @@ export default function MusiciansPage() {
   }, [])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => { setMusicianRoles(getMusicianRoles()) }, [])
 
   function openCreate() { setForm(emptyForm); setEditItem(null); setShowCreate(true) }
   function openEdit(m: Musician) {
@@ -64,7 +67,7 @@ export default function MusiciansPage() {
       ? await supabase.from('musicians').update(payload).eq('id', editItem.id)
       : await supabase.from('musicians').insert(payload)
     setSaving(false)
-    if (error) { toast('Σφάλμα', 'error'); return }
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
     toast(editItem ? 'Ενημερώθηκε!' : 'Μουσικός προστέθηκε!', 'success')
     setShowCreate(false); load()
   }
@@ -76,8 +79,10 @@ export default function MusiciansPage() {
 
   async function handleDelete() {
     if (!deleteId) return; setDeleting(true)
-    await supabase.from('musicians').delete().eq('id', deleteId)
-    setDeleting(false); toast('Διαγράφηκε', 'success'); setDeleteId(null); load()
+    const { error } = await supabase.from('musicians').delete().eq('id', deleteId)
+    setDeleting(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Διαγράφηκε', 'success'); setDeleteId(null); load()
   }
 
   const filtered = musicians.filter(m => {
@@ -177,7 +182,7 @@ export default function MusiciansPage() {
           <div className="grid grid-cols-2 gap-4">
             <div><label className="label">Ρόλος / Όργανο</label>
               <select className="select" value={form.role} onChange={e => setForm({ ...form, role: e.target.value })}>
-                <option value="">—</option>{MUSICIAN_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                <option value="">—</option>{musicianRoles.map(r => <option key={r} value={r}>{r}</option>)}
               </select></div>
             <div><label className="label">Default Αμοιβή (€)</label>
               <input type="number" step="0.01" className="input" value={form.default_fee} onChange={e => setForm({ ...form, default_fee: e.target.value })} /></div>

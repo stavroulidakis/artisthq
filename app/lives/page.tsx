@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, formatDate, formatTime, LIVE_STATUS_LABELS, LIVE_CATEGORIES, LIVE_STATUSES, REGIONS } from '@/lib/utils'
+import { formatCurrency, formatDate, formatTime } from '@/lib/utils'
+import { getLiveCategories, getLiveStatuses, getStatusLabel, getStatusBadgeClass, StatusEntry } from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { EmptyState, Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
@@ -10,13 +11,12 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { Music2, Plus, Search, Trash2, Eye, Calendar, Clock } from 'lucide-react'
 import Link from 'next/link'
-import type { Live, Client, Venue } from '@/lib/supabase'
+import type { Live, Client } from '@/lib/supabase'
 
 export default function LivesPage() {
   const { toast } = useToast()
   const [lives, setLives] = useState<Live[]>([])
   const [clients, setClients] = useState<Client[]>([])
-  const [venues, setVenues] = useState<Venue[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
@@ -26,35 +26,41 @@ export default function LivesPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [categories, setCategories] = useState<string[]>([])
+  const [statusEntries, setStatusEntries] = useState<StatusEntry[]>([])
 
   const emptyForm = {
-    title: '', date: '', time_start: '', time_end: '',
-    venue_id: '', client_id: '', category: '', status: 'confirmed',
-    city: '', region: '', agreed_amount: '', deposit: '',
-    deposit_date: '', payment_method: '', notes: ''
+    title: '', date: '', category: '', client_id: '',
+    city: '', status: 'confirmed', agreed_amount: '', deposit: '', notes: '',
   }
   const [form, setForm] = useState(emptyForm)
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: livesData }, { data: clientsData }, { data: venuesData }] = await Promise.all([
+    const [{ data: livesData, error: livesError }, { data: clientsData }] = await Promise.all([
       supabase.from('lives').select('*, venues(name,city), clients(name)').order('date', { ascending: false }),
       supabase.from('clients').select('id,name').order('name'),
-      supabase.from('venues').select('id,name,city').order('name'),
     ])
+    if (livesError) console.error('Lives load error:', livesError.message)
     setLives((livesData || []) as Live[])
-    setClients(clientsData as Client[] || [])
-    setVenues(venuesData as Venue[] || [])
+    setClients((clientsData || []) as Client[])
     setLoading(false)
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    setCategories(getLiveCategories())
+    setStatusEntries(getLiveStatuses())
+  }, [load])
 
-  const years = Array.from(new Set(lives.map(l => l.date?.slice(0, 4)).filter(Boolean) as string[])).sort().reverse()
+  const years = Array.from(
+    new Set(lives.map(l => l.date?.slice(0, 4)).filter(Boolean) as string[])
+  ).sort().reverse()
 
   const filtered = lives.filter(l => {
     const q = search.toLowerCase()
-    const matchSearch = !q || l.title.toLowerCase().includes(q) ||
+    const matchSearch = !q ||
+      l.title.toLowerCase().includes(q) ||
       l.clients?.name?.toLowerCase().includes(q) ||
       l.venues?.name?.toLowerCase().includes(q) ||
       l.city?.toLowerCase().includes(q)
@@ -65,39 +71,41 @@ export default function LivesPage() {
   })
 
   async function handleCreate(e: React.FormEvent) {
-    e.preventDefault(); setSaving(true)
+    e.preventDefault()
+    setSaving(true)
     const agreed = form.agreed_amount ? parseFloat(form.agreed_amount) : null
     const dep = form.deposit ? parseFloat(form.deposit) : null
-    const balance = agreed && dep ? agreed - dep : agreed
+    const balance = agreed !== null && dep !== null ? agreed - dep : agreed
 
     const { error } = await supabase.from('lives').insert({
       title: form.title,
       date: form.date || null,
-      time_start: form.time_start || null,
-      time_end: form.time_end || null,
-      venue_id: form.venue_id || null,
-      client_id: form.client_id || null,
       category: form.category || null,
-      status: form.status,
+      client_id: form.client_id || null,
       city: form.city || null,
-      region: form.region || null,
+      status: form.status,
       agreed_amount: agreed,
       deposit: dep,
-      deposit_date: form.deposit_date || null,
       balance,
-      payment_method: form.payment_method || null,
       notes: form.notes || null,
     })
     setSaving(false)
     if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
     toast('Live δημιουργήθηκε!', 'success')
-    setShowCreate(false); setForm(emptyForm); load()
+    setShowCreate(false)
+    setForm(emptyForm)
+    load()
   }
 
   async function handleDelete() {
-    if (!deleteId) return; setDeleting(true)
-    await supabase.from('lives').delete().eq('id', deleteId)
-    setDeleting(false); toast('Live διαγράφηκε', 'success'); setDeleteId(null); load()
+    if (!deleteId) return
+    setDeleting(true)
+    const { error } = await supabase.from('lives').delete().eq('id', deleteId)
+    setDeleting(false)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Live διαγράφηκε', 'success')
+    setDeleteId(null)
+    load()
   }
 
   return (
@@ -114,23 +122,22 @@ export default function LivesPage() {
       />
 
       <div className="p-6 space-y-4">
-        {/* Filters */}
         <div className="flex flex-wrap gap-2">
           <div className="relative flex-1 min-w-48">
             <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input className="input" style={{ paddingLeft: 32 }} placeholder="Αναζήτηση..." value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <select className="select w-auto" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-            <option value="">Όλες Κατ/σεις</option>
-            {LIVE_STATUSES.map(s => <option key={s} value={s}>{LIVE_STATUS_LABELS[s]}</option>)}
+            <option value="">Όλες Καταστ.</option>
+            {statusEntries.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <select className="select w-auto" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
             <option value="">Όλοι Τύποι</option>
-            {LIVE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <select className="select w-auto" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
             <option value="">Όλα τα Έτη</option>
-            {years.map(y => <option key={y} value={y!}>{y}</option>)}
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
 
@@ -173,7 +180,9 @@ export default function LivesPage() {
                       <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{live.category || '—'}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`badge badge-${live.status}`}>{LIVE_STATUS_LABELS[live.status]}</span>
+                      <span className={`badge ${getStatusBadgeClass(live.status)}`}>
+                        {getStatusLabel(live.status, statusEntries)}
+                      </span>
                     </td>
                     <td className="px-4 py-3" style={{ fontWeight: 700, color: 'var(--green)' }}>
                       {live.agreed_amount ? formatCurrency(live.agreed_amount) : '—'}
@@ -197,8 +206,7 @@ export default function LivesPage() {
         )}
       </div>
 
-      {/* Create Modal */}
-      <Modal open={showCreate} onClose={() => setShowCreate(false)} title="Νέο Live" size="lg">
+      <Modal open={showCreate} onClose={() => { setShowCreate(false); setForm(emptyForm) }} title="Νέο Live">
         <form onSubmit={handleCreate}>
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -213,16 +221,8 @@ export default function LivesPage() {
               <label className="label">Κατηγορία</label>
               <select className="select" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>
                 <option value="">— Επιλογή —</option>
-                {LIVE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-            </div>
-            <div>
-              <label className="label">Ώρα Έναρξης</label>
-              <input type="time" className="input" value={form.time_start} onChange={e => setForm({ ...form, time_start: e.target.value })} />
-            </div>
-            <div>
-              <label className="label">Ώρα Λήξης</label>
-              <input type="time" className="input" value={form.time_end} onChange={e => setForm({ ...form, time_end: e.target.value })} />
             </div>
             <div>
               <label className="label">Πελάτης</label>
@@ -232,31 +232,17 @@ export default function LivesPage() {
               </select>
             </div>
             <div>
-              <label className="label">Χώρος</label>
-              <select className="select" value={form.venue_id} onChange={e => setForm({ ...form, venue_id: e.target.value })}>
-                <option value="">— Κανείς —</option>
-                {venues.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
-            </div>
-            <div>
               <label className="label">Πόλη</label>
               <input className="input" value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
             </div>
             <div>
-              <label className="label">Περιοχή</label>
-              <select className="select" value={form.region} onChange={e => setForm({ ...form, region: e.target.value })}>
-                <option value="">— Επιλογή —</option>
-                {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div>
               <label className="label">Κατάσταση</label>
               <select className="select" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
-                {LIVE_STATUSES.map(s => <option key={s} value={s}>{LIVE_STATUS_LABELS[s]}</option>)}
+                {statusEntries.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
             <div>
-              <label className="label">Συμφωνηθέν Ποσό (€)</label>
+              <label className="label">Ποσό (€)</label>
               <input type="number" step="0.01" className="input" value={form.agreed_amount} onChange={e => setForm({ ...form, agreed_amount: e.target.value })} />
             </div>
             <div>
@@ -269,7 +255,7 @@ export default function LivesPage() {
             </div>
           </div>
           <div className="flex gap-3 justify-end mt-5">
-            <button type="button" onClick={() => setShowCreate(false)} className="btn btn-secondary">Ακύρωση</button>
+            <button type="button" onClick={() => { setShowCreate(false); setForm(emptyForm) }} className="btn btn-secondary">Ακύρωση</button>
             <button type="submit" disabled={saving} className="btn btn-primary">{saving ? 'Αποθήκευση...' : 'Δημιουργία'}</button>
           </div>
         </form>
@@ -280,4 +266,3 @@ export default function LivesPage() {
     </div>
   )
 }
-
