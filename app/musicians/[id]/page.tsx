@@ -1,13 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, MUSICIAN_ROLES } from '@/lib/utils'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/PageHeader'
 import { useToast } from '@/components/ui/Toast'
-import { UserCheck, Save, ArrowLeft, CheckCircle2, Circle } from 'lucide-react'
+import { UserCheck, Save, ArrowLeft, CheckCircle2, Circle, Camera } from 'lucide-react'
 import Link from 'next/link'
 import type { Musician } from '@/lib/supabase'
 
@@ -35,7 +35,9 @@ export default function MusicianDetailPage() {
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [form, setForm] = useState<any>({})
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -46,7 +48,6 @@ export default function MusicianDetailPage() {
         .eq('musician_id', id),
     ])
     setMusician(m as Musician)
-    // Sort by live date client-side to avoid Supabase nested ordering issues
     const sorted = ((lm || []) as LiveMusWithLive[]).sort((a, b) =>
       (b.lives?.date || '').localeCompare(a.lives?.date || '')
     )
@@ -60,6 +61,20 @@ export default function MusicianDetailPage() {
   }, [id])
 
   useEffect(() => { load() }, [load])
+
+  async function handleAvatarUpload(file: File) {
+    if (!musician) return
+    setUploadingAvatar(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `musician-${musician.id}.${ext}`
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    if (uploadError) { toast('Σφάλμα upload: ' + uploadError.message, 'error'); setUploadingAvatar(false); return }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+    await supabase.from('musicians').update({ avatar_url: urlData.publicUrl }).eq('id', musician.id)
+    setUploadingAvatar(false)
+    load()
+    toast('Φωτογραφία ανέβηκε!', 'success')
+  }
 
   async function handleSave() {
     setSaving(true)
@@ -128,6 +143,34 @@ export default function MusicianDetailPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="card">
+            <div className="flex items-center gap-4 mb-5">
+              <div className="relative cursor-pointer flex-shrink-0" onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}>
+                <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center"
+                  style={{ background: musician.avatar_url ? 'transparent' : 'rgba(74,127,193,0.15)', border: '2px solid var(--border)' }}>
+                  {uploadingAvatar ? (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>...</span>
+                  ) : musician.avatar_url ? (
+                    <img src={musician.avatar_url} alt={musician.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--sea)', fontFamily: 'var(--font-display)' }}>
+                      {musician.name.charAt(0)}
+                    </span>
+                  )}
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center border-2"
+                  style={{ background: 'var(--terra)', borderColor: 'var(--bg-card)' }}>
+                  <Camera size={11} color="white" />
+                </div>
+              </div>
+              <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={e => e.target.files?.[0] && handleAvatarUpload(e.target.files[0])} />
+              <div>
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {uploadingAvatar ? 'Ανέβασμα...' : 'Κλικ για αλλαγή φωτογραφίας'}
+                </p>
+              </div>
+            </div>
+
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 16 }}>Στοιχεία</h3>
             {editing ? (
               <div className="space-y-3">

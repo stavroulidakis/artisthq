@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { REGIONS } from '@/lib/utils'
 import {
@@ -14,7 +14,7 @@ import { Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
-import { Settings, Save, Plus, Trash2, Edit2, MapPin, Building2, Mic2, RotateCcw, List } from 'lucide-react'
+import { Settings, Save, Plus, Trash2, Edit2, MapPin, Building2, Mic2, RotateCcw, List, Camera } from 'lucide-react'
 import type { Venue } from '@/lib/supabase'
 
 const VENUE_TYPES = ['Κτήμα', 'Ξενοδοχείο', 'Εστιατόριο', 'Κλαμπ', 'Υπαίθριο', 'Αίθουσα', 'Άλλο']
@@ -24,6 +24,9 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [settingsId, setSettingsId] = useState<string | null>(null)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
   const [venues, setVenues] = useState<Venue[]>([])
   const [activeTab, setActiveTab] = useState<'profile' | 'venues' | 'lists'>('profile')
   const [showVenueModal, setShowVenueModal] = useState(false)
@@ -44,7 +47,6 @@ export default function SettingsPage() {
   }
   const [venueForm, setVenueForm] = useState(emptyVenueForm)
 
-  // Lists state
   const [roles, setRoles] = useState<string[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [statuses, setStatuses] = useState<StatusEntry[]>([])
@@ -67,6 +69,7 @@ export default function SettingsPage() {
         email: s.email || '',
         address: s.address || '',
       })
+      if (s.avatar_url) setAvatarUrl(s.avatar_url)
     }
     setVenues((v || []) as Venue[])
     setLoading(false)
@@ -78,6 +81,25 @@ export default function SettingsPage() {
     setCategories(getLiveCategories())
     setStatuses(getLiveStatuses())
   }, [load])
+
+  async function handleAvatarUpload(file: File) {
+    setUploadingAvatar(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `artist-avatar.${ext}`
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    if (uploadError) { toast('Σφάλμα upload: ' + uploadError.message, 'error'); setUploadingAvatar(false); return }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+    const url = urlData.publicUrl
+    if (settingsId) {
+      await supabase.from('settings').update({ avatar_url: url }).eq('id', settingsId)
+    } else {
+      const { data: newS } = await supabase.from('settings').insert({ avatar_url: url }).select().single()
+      if (newS) setSettingsId(newS.id)
+    }
+    setAvatarUrl(url)
+    setUploadingAvatar(false)
+    toast('Φωτογραφία ανέβηκε!', 'success')
+  }
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault()
@@ -147,7 +169,6 @@ export default function SettingsPage() {
     load()
   }
 
-  // --- List handlers ---
   function addRole() {
     const val = newRole.trim()
     if (!val || roles.includes(val)) return
@@ -204,16 +225,30 @@ export default function SettingsPage() {
         {activeTab === 'profile' && (
           <div className="max-w-lg">
             <form onSubmit={handleSaveProfile} className="card space-y-4">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center"
-                  style={{ background: 'var(--terra-glow)' }}>
-                  <Mic2 size={22} color="var(--terra)" />
+              <div className="flex flex-col items-center pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
+                <div className="relative cursor-pointer mb-2" onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}>
+                  <div className="w-20 h-20 rounded-2xl overflow-hidden flex items-center justify-center"
+                    style={{ background: avatarUrl ? 'transparent' : 'var(--terra-glow)', border: '2px solid var(--border)' }}>
+                    {uploadingAvatar ? (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>...</div>
+                    ) : avatarUrl ? (
+                      <img src={avatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <Mic2 size={32} color="var(--terra)" />
+                    )}
+                  </div>
+                  <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full flex items-center justify-center border-2"
+                    style={{ background: 'var(--terra)', borderColor: 'var(--bg-card)' }}>
+                    <Camera size={13} color="white" />
+                  </div>
                 </div>
-                <div>
-                  <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', fontWeight: 700 }}>Προφίλ Καλλιτέχνη</h2>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Βασικές πληροφορίες</p>
-                </div>
+                <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+                  onChange={e => e.target.files?.[0] && handleAvatarUpload(e.target.files[0])} />
+                <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {uploadingAvatar ? 'Ανέβασμα...' : 'Κλικ για αλλαγή φωτογραφίας'}
+                </p>
               </div>
+
               <div><label className="label">Όνομα Καλλιτέχνη</label>
                 <input className="input" value={form.artist_name} onChange={e => setForm({ ...form, artist_name: e.target.value })} /></div>
               <div><label className="label">Τύπος / Περιγραφή</label>
@@ -275,108 +310,81 @@ export default function SettingsPage() {
 
         {activeTab === 'lists' && (
           <div className="space-y-6 max-w-xl">
-            {/* Musician Roles */}
             <div className="card">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <List size={16} color="var(--sea)" />
+                  <List size={15} color="var(--sea)" />
                   <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Ρόλοι Μουσικών</h3>
                 </div>
-                <button onClick={resetRoles} className="btn btn-ghost btn-xs" title="Επαναφορά προεπιλογών">
-                  <RotateCcw size={12} /> Προεπιλογές
-                </button>
+                <button onClick={resetRoles} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
               </div>
-              <div className="space-y-2 mb-4">
+              <div className="space-y-1 mb-3">
                 {roles.map((role, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-2 px-3 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{role}</span>
-                    <button onClick={() => removeRole(i)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
+                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{role}</span>
+                    <button onClick={() => removeRole(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
                   </div>
                 ))}
                 {roles.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν ρόλοι.</p>}
               </div>
               <div className="flex gap-2">
-                <input
-                  className="input"
-                  placeholder="π.χ. Ακορντεονίστας"
-                  value={newRole}
+                <input className="input" placeholder="π.χ. Ακορντεονίστας" value={newRole}
                   onChange={e => setNewRole(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRole() } }}
-                />
-                <button onClick={addRole} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                  <Plus size={14} />Προσθήκη
-                </button>
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRole() } }} />
+                <button onClick={addRole} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
               </div>
             </div>
 
-            {/* Live Categories */}
             <div className="card">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <List size={16} color="var(--terra)" />
+                  <List size={15} color="var(--terra)" />
                   <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Κατηγορίες Live</h3>
                 </div>
-                <button onClick={resetCategories} className="btn btn-ghost btn-xs" title="Επαναφορά προεπιλογών">
-                  <RotateCcw size={12} /> Προεπιλογές
-                </button>
+                <button onClick={resetCategories} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
               </div>
-              <div className="space-y-2 mb-4">
+              <div className="space-y-1 mb-3">
                 {categories.map((cat, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-2 px-3 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{cat}</span>
-                    <button onClick={() => removeCategory(i)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
+                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{cat}</span>
+                    <button onClick={() => removeCategory(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
                   </div>
                 ))}
                 {categories.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν κατηγορίες.</p>}
               </div>
               <div className="flex gap-2">
-                <input
-                  className="input"
-                  placeholder="π.χ. Χριστουγεννιάτικη Εκδήλωση"
-                  value={newCategory}
+                <input className="input" placeholder="π.χ. Χριστουγεννιάτικη Εκδήλωση" value={newCategory}
                   onChange={e => setNewCategory(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory() } }}
-                />
-                <button onClick={addCategory} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                  <Plus size={14} />Προσθήκη
-                </button>
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory() } }} />
+                <button onClick={addCategory} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
               </div>
             </div>
 
-            {/* Live Statuses */}
             <div className="card">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <List size={16} color="var(--amber)" />
+                  <List size={15} color="var(--amber)" />
                   <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Καταστάσεις Live</h3>
                 </div>
-                <button onClick={resetStatuses} className="btn btn-ghost btn-xs" title="Επαναφορά προεπιλογών">
-                  <RotateCcw size={12} /> Προεπιλογές
-                </button>
+                <button onClick={resetStatuses} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
               </div>
-              <div className="space-y-2 mb-4">
+              <div className="space-y-1 mb-3">
                 {statuses.map((s, i) => (
-                  <div key={i} className="flex items-center gap-3">
+                  <div key={i} className="flex items-center gap-2">
                     <span className={`badge ${getStatusBadgeClass(s.value)}`}>{s.label}</span>
                     <span className="flex-1" style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                       {s.value !== s.label ? `(${s.value})` : ''}
                     </span>
-                    <button onClick={() => removeStatus(i)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
+                    <button onClick={() => removeStatus(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
                   </div>
                 ))}
                 {statuses.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν καταστάσεις.</p>}
               </div>
               <div className="flex gap-2">
-                <input
-                  className="input"
-                  placeholder="π.χ. Αναβλήθηκε"
-                  value={newStatusLabel}
+                <input className="input" placeholder="π.χ. Αναβλήθηκε" value={newStatusLabel}
                   onChange={e => setNewStatusLabel(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addStatus() } }}
-                />
-                <button onClick={addStatus} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}>
-                  <Plus size={14} />Προσθήκη
-                </button>
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addStatus() } }} />
+                <button onClick={addStatus} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
               </div>
             </div>
           </div>
@@ -416,14 +424,8 @@ export default function SettingsPage() {
         </form>
       </Modal>
 
-      <ConfirmDialog
-        open={!!deleteVenueId}
-        onClose={() => setDeleteVenueId(null)}
-        onConfirm={handleDeleteVenue}
-        loading={deleting}
-        title="Διαγραφή Χώρου"
-        message="Ο χώρος θα διαγραφεί μόνιμα."
-      />
+      <ConfirmDialog open={!!deleteVenueId} onClose={() => setDeleteVenueId(null)} onConfirm={handleDeleteVenue}
+        loading={deleting} title="Διαγραφή Χώρου" message="Ο χώρος θα διαγραφεί μόνιμα." />
     </div>
   )
 }

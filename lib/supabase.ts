@@ -51,6 +51,7 @@ export interface Musician {
   default_fee?: number
   notes?: string
   is_active: boolean
+avatar_url?: string | null
   created_at: string
 }
 

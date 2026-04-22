@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, MUSICIAN_ROLES } from '@/lib/utils'
 import { getMusicianRoles } from '@/lib/lists'
@@ -9,7 +9,7 @@ import { EmptyState, Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
-import { UserCheck, Plus, Search, Trash2, Eye, Phone, Mail, Euro, ToggleLeft, ToggleRight } from 'lucide-react'
+import { UserCheck, Plus, Search, Trash2, Eye, Phone, Mail, Euro, ToggleLeft, ToggleRight, Camera } from 'lucide-react'
 import Link from 'next/link'
 import type { Musician } from '@/lib/supabase'
 
@@ -25,6 +25,9 @@ export default function MusiciansPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [modalAvatarUrl, setModalAvatarUrl] = useState<string | null>(null)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
 
   const emptyForm = { name: '', role: '', phone: '', email: '', default_fee: '', notes: '', is_active: true }
   const [form, setForm] = useState<any>(emptyForm)
@@ -50,10 +53,27 @@ export default function MusiciansPage() {
   useEffect(() => { load() }, [load])
   useEffect(() => { setMusicianRoles(getMusicianRoles()) }, [])
 
-  function openCreate() { setForm(emptyForm); setEditItem(null); setShowCreate(true) }
+  function openCreate() { setForm(emptyForm); setEditItem(null); setModalAvatarUrl(null); setShowCreate(true) }
   function openEdit(m: Musician) {
     setForm({ name: m.name, role: m.role || '', phone: m.phone || '', email: m.email || '', default_fee: m.default_fee || '', notes: m.notes || '', is_active: m.is_active })
-    setEditItem(m); setShowCreate(true)
+    setEditItem(m)
+    setModalAvatarUrl(m.avatar_url || null)
+    setShowCreate(true)
+  }
+
+  async function handleAvatarUpload(file: File, musicianId: string) {
+    setUploadingAvatar(true)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const path = `musician-${musicianId}.${ext}`
+    const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
+    if (uploadError) { toast('Σφάλμα upload: ' + uploadError.message, 'error'); setUploadingAvatar(false); return }
+    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
+    const url = urlData.publicUrl
+    await supabase.from('musicians').update({ avatar_url: url }).eq('id', musicianId)
+    setModalAvatarUrl(url)
+    setUploadingAvatar(false)
+    load()
+    toast('Φωτογραφία ανέβηκε!', 'success')
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -124,9 +144,12 @@ export default function MusiciansPage() {
                 <div key={m.id} className="card card-hover">
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold"
-                        style={{ background: m.is_active ? 'rgba(74,127,193,0.15)' : 'var(--bg-overlay)', color: m.is_active ? 'var(--sea)' : 'var(--text-muted)', fontFamily: 'var(--font-display)' }}>
-                        {m.name.charAt(0)}
+                      <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center text-base font-bold flex-shrink-0"
+                        style={{ background: m.avatar_url ? 'transparent' : (m.is_active ? 'rgba(74,127,193,0.15)' : 'var(--bg-overlay)') }}>
+                        {m.avatar_url
+                          ? <img src={m.avatar_url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ color: m.is_active ? 'var(--sea)' : 'var(--text-muted)', fontFamily: 'var(--font-display)' }}>{m.name.charAt(0)}</span>
+                        }
                       </div>
                       <div>
                         <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{m.name}</h3>
@@ -177,6 +200,34 @@ export default function MusiciansPage() {
 
       <Modal open={showCreate} onClose={() => setShowCreate(false)} title={editItem ? 'Επεξεργασία Μουσικού' : 'Νέος Μουσικός'}>
         <form onSubmit={handleSave} className="space-y-4">
+          {editItem && (
+            <div className="flex flex-col items-center pb-3 border-b" style={{ borderColor: 'var(--border)' }}>
+              <div className="relative cursor-pointer mb-1" onClick={() => !uploadingAvatar && avatarInputRef.current?.click()}>
+                <div className="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center"
+                  style={{ background: modalAvatarUrl ? 'transparent' : 'rgba(74,127,193,0.15)', border: '2px solid var(--border)' }}>
+                  {uploadingAvatar ? (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>...</span>
+                  ) : modalAvatarUrl ? (
+                    <img src={modalAvatarUrl} alt={editItem.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--sea)', fontFamily: 'var(--font-display)' }}>
+                      {editItem.name.charAt(0)}
+                    </span>
+                  )}
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center border-2"
+                  style={{ background: 'var(--terra)', borderColor: 'var(--bg-card)' }}>
+                  <Camera size={11} color="white" />
+                </div>
+              </div>
+              <input ref={avatarInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+                onChange={e => e.target.files?.[0] && editItem && handleAvatarUpload(e.target.files[0], editItem.id)} />
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                {uploadingAvatar ? 'Ανέβασμα...' : 'Κλικ για αλλαγή'}
+              </p>
+            </div>
+          )}
+
           <div><label className="label">Όνομα *</label>
             <input required className="input" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-4">
