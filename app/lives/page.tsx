@@ -104,11 +104,12 @@ export default function LivesPage() {
     })
     setSaving(false)
     if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    const { title, date } = form
     toast('Live δημιουργήθηκε!', 'success')
     setShowCreate(false)
     setForm(emptyForm)
     load()
-    openGoogleCalendar(form.title, form.date, 11)
+    openGoogleCalendar(title, date, 11)
   }
 
   async function handleDelete() {
