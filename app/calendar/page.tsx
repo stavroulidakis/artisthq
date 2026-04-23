@@ -16,7 +16,7 @@ import {
 } from 'date-fns'
 import { el } from 'date-fns/locale'
 import Link from 'next/link'
-import type { Live, Client } from '@/lib/supabase'
+import type { Live, Client, Project } from '@/lib/supabase'
 
 type ViewMode = 'month' | 'week' | 'list'
 
@@ -25,6 +25,7 @@ const DAYS_GR = ['Δευ', 'Τρί', 'Τετ', 'Πέμ', 'Παρ', 'Σαβ', 'Κ
 export default function CalendarPage() {
   const { toast } = useToast()
   const [lives, setLives] = useState<Live[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [current, setCurrent] = useState(new Date())
@@ -46,12 +47,14 @@ export default function CalendarPage() {
 
   const load = useCallback(async () => {
     setLoading(true)
-    const [{ data: livesData }, { data: clientsData }] = await Promise.all([
+    const [{ data: livesData }, { data: clientsData }, { data: projectsData }] = await Promise.all([
       supabase.from('lives').select('*, venues(name, city), clients(name)').order('date'),
       supabase.from('clients').select('id,name').order('name'),
+      supabase.from('projects').select('id,title,date,status,type').order('date'),
     ])
     setLives((livesData || []) as Live[])
     setClients((clientsData || []) as Client[])
+    setProjects((projectsData || []) as Project[])
     setLoading(false)
   }, [])
 
@@ -64,6 +67,11 @@ export default function CalendarPage() {
   function livesForDay(date: Date) {
     const str = format(date, 'yyyy-MM-dd')
     return lives.filter(l => l.date === str)
+  }
+
+  function projectsForDay(date: Date) {
+    const str = format(date, 'yyyy-MM-dd')
+    return projects.filter(p => p.date === str)
   }
 
   function exportICS() {
@@ -154,6 +162,7 @@ export default function CalendarPage() {
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
 
   const selectedDayLives = selectedDay ? livesForDay(selectedDay) : []
+  const selectedDayProjects = selectedDay ? projectsForDay(selectedDay) : []
 
   return (
     <div>
@@ -211,14 +220,21 @@ export default function CalendarPage() {
               <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{label}</span>
             </div>
           ))}
+          <div className="flex items-center gap-1.5">
+            <div style={{ width: 28, height: 12, borderRadius: 3, background: 'rgba(139,92,246,0.3)' }} />
+            <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Project</span>
+          </div>
         </div>
 
         {loading ? <Spinner /> : view === 'month' ? (
-          <MonthView calDays={calDays} current={current} livesForDay={livesForDay} onDayClick={handleDayClick} />
+          <MonthView calDays={calDays} current={current} livesForDay={livesForDay} projectsForDay={projectsForDay} onDayClick={handleDayClick} />
         ) : view === 'week' ? (
-          <WeekView weekDays={weekDays} livesForDay={livesForDay} onDayClick={handleDayClick} />
+          <WeekView weekDays={weekDays} livesForDay={livesForDay} projectsForDay={projectsForDay} onDayClick={handleDayClick} />
         ) : (
-          <ListView lives={listLives} />
+          <ListView
+            lives={listLives}
+            projects={projects.filter(p => p.date && p.date >= format(new Date(), 'yyyy-MM-dd')).sort((a, b) => (a.date || '').localeCompare(b.date || ''))}
+          />
         )}
       </div>
 
@@ -230,7 +246,12 @@ export default function CalendarPage() {
         size="sm"
       >
         <div className="space-y-4">
-          {selectedDayLives.length > 0 ? (
+          {selectedDayLives.length === 0 && selectedDayProjects.length === 0 && (
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '8px 0' }}>
+              Δεν υπάρχουν events για αυτή την ημέρα
+            </p>
+          )}
+          {selectedDayLives.length > 0 && (
             <div className="space-y-2">
               {selectedDayLives.map(live => (
                 <Link
@@ -254,10 +275,28 @@ export default function CalendarPage() {
                 </Link>
               ))}
             </div>
-          ) : (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', textAlign: 'center', padding: '8px 0' }}>
-              Δεν υπάρχουν lives για αυτή την ημέρα
-            </p>
+          )}
+          {selectedDayProjects.length > 0 && (
+            <div className="space-y-2">
+              {selectedDayProjects.map(p => (
+                <Link
+                  key={p.id}
+                  href={`/projects/${p.id}`}
+                  onClick={() => setSelectedDay(null)}
+                  className="flex items-center gap-3 p-3 rounded-xl"
+                  style={{ background: 'rgba(139,92,246,0.08)', textDecoration: 'none', display: 'flex' }}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: 'rgb(139,92,246)' }} />
+                  <div className="flex-1 min-w-0">
+                    <p style={{ fontWeight: 700, fontSize: '0.88rem' }} className="truncate">{p.title}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{p.type || 'Project'}</p>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(139,92,246,0.15)', color: 'rgb(139,92,246)', flexShrink: 0 }}>
+                    {p.status || 'Project'}
+                  </span>
+                </Link>
+              ))}
+            </div>
           )}
 
           <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
@@ -371,10 +410,11 @@ export default function CalendarPage() {
   )
 }
 
-function MonthView({ calDays, current, livesForDay, onDayClick }: {
+function MonthView({ calDays, current, livesForDay, projectsForDay, onDayClick }: {
   calDays: Date[]
   current: Date
   livesForDay: (d: Date) => Live[]
+  projectsForDay: (d: Date) => Project[]
   onDayClick: (d: Date) => void
 }) {
   return (
@@ -390,6 +430,8 @@ function MonthView({ calDays, current, livesForDay, onDayClick }: {
       <div className="grid grid-cols-7 gap-1.5">
         {calDays.map(day => {
           const dayLives = livesForDay(day)
+          const dayProjects = projectsForDay(day)
+          const totalEvents = dayLives.length + dayProjects.length
           const inMonth = isSameMonth(day, current)
           const today = isToday(day)
           return (
@@ -411,8 +453,8 @@ function MonthView({ calDays, current, livesForDay, onDayClick }: {
                 }}>
                   {format(day, 'd')}
                 </span>
-                {dayLives.length > 2 && (
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>+{dayLives.length - 1}</span>
+                {totalEvents > 2 && (
+                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>+{totalEvents - 1}</span>
                 )}
               </div>
               {dayLives.slice(0, 2).map(live => (
@@ -422,6 +464,17 @@ function MonthView({ calDays, current, livesForDay, onDayClick }: {
                   {live.title}
                 </Link>
               ))}
+              {dayLives.length === 0 && dayProjects.slice(0, 2).map(p => (
+                <Link key={p.id} href={`/projects/${p.id}`}
+                  style={{ display: 'block', textDecoration: 'none', fontSize: '0.7rem', padding: '1px 4px', borderRadius: 3, marginBottom: 1, background: 'rgba(139,92,246,0.15)', color: 'rgb(139,92,246)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {p.title}
+                </Link>
+              ))}
+              {dayLives.length > 0 && dayProjects.length > 0 && (
+                <div style={{ fontSize: '0.65rem', color: 'rgb(139,92,246)', fontWeight: 600 }}>
+                  +{dayProjects.length} project
+                </div>
+              )}
             </div>
           )
         })}
@@ -430,9 +483,10 @@ function MonthView({ calDays, current, livesForDay, onDayClick }: {
   )
 }
 
-function WeekView({ weekDays, livesForDay, onDayClick }: {
+function WeekView({ weekDays, livesForDay, projectsForDay, onDayClick }: {
   weekDays: Date[]
   livesForDay: (d: Date) => Live[]
+  projectsForDay: (d: Date) => Project[]
   onDayClick: (d: Date) => void
 }) {
   return (
@@ -461,10 +515,10 @@ function WeekView({ weekDays, livesForDay, onDayClick }: {
             >
               {dayLives.map(live => (
                 <Link key={live.id} href={`/lives/${live.id}`}
-                  className="cal-event block"
+                  className="block"
                   style={{
                     whiteSpace: 'normal', fontSize: '0.72rem', padding: '6px 8px',
-                    textDecoration: 'none',
+                    textDecoration: 'none', borderRadius: 6,
                     background: live.status === 'confirmed' ? 'rgba(39,174,96,0.15)'
                       : live.status === 'completed' ? 'rgba(74,127,193,0.15)'
                       : live.status === 'cancelled' ? 'rgba(231,76,60,0.12)'
@@ -480,6 +534,14 @@ function WeekView({ weekDays, livesForDay, onDayClick }: {
                   {live.time_start && <p style={{ opacity: 0.8 }}>{formatTime(live.time_start)}</p>}
                 </Link>
               ))}
+              {projectsForDay(day).map(p => (
+                <Link key={p.id} href={`/projects/${p.id}`}
+                  className="block"
+                  style={{ whiteSpace: 'normal', fontSize: '0.72rem', padding: '6px 8px', textDecoration: 'none', borderRadius: 6, background: 'rgba(139,92,246,0.12)', color: 'rgb(139,92,246)' }}>
+                  <p className="font-bold truncate">{p.title}</p>
+                  {p.type && <p style={{ opacity: 0.8 }}>{p.type}</p>}
+                </Link>
+              ))}
             </div>
           </div>
         )
@@ -488,47 +550,74 @@ function WeekView({ weekDays, livesForDay, onDayClick }: {
   )
 }
 
-function ListView({ lives }: { lives: Live[] }) {
-  if (lives.length === 0) return (
+function ListView({ lives, projects }: { lives: Live[]; projects: Project[] }) {
+  if (lives.length === 0 && projects.length === 0) return (
     <div className="text-center py-16" style={{ color: 'var(--text-muted)' }}>
       Δεν υπάρχουν επερχόμενα events
     </div>
   )
 
-  const grouped: Record<string, Live[]> = {}
-  for (const live of lives) {
-    const key = live.date ? format(parseISO(live.date), 'MMMM yyyy', { locale: el }) : 'Άγνωστο'
+  type AnyEvent = { date: string; _type: 'live'; live: Live } | { date: string; _type: 'project'; project: Project }
+  const allEvents: AnyEvent[] = [
+    ...lives.map(l => ({ date: l.date || '', _type: 'live' as const, live: l })),
+    ...projects.map(p => ({ date: p.date || '', _type: 'project' as const, project: p })),
+  ].sort((a, b) => a.date.localeCompare(b.date))
+
+  const grouped: Record<string, AnyEvent[]> = {}
+  for (const ev of allEvents) {
+    const key = ev.date ? format(parseISO(ev.date), 'MMMM yyyy', { locale: el }) : 'Άγνωστο'
     if (!grouped[key]) grouped[key] = []
-    grouped[key].push(live)
+    grouped[key].push(ev)
   }
 
   return (
     <div className="space-y-6">
-      {Object.entries(grouped).map(([month, monthLives]) => (
+      {Object.entries(grouped).map(([month, monthEvents]) => (
         <div key={month}>
           <h3 className="text-sm font-bold uppercase tracking-wider mb-3"
             style={{ color: 'var(--terra)' }}>{month}</h3>
           <div className="space-y-2">
-            {monthLives.map(live => (
-              <Link key={live.id} href={`/lives/${live.id}`}
+            {monthEvents.map(ev => ev._type === 'live' ? (
+              <Link key={ev.live.id} href={`/lives/${ev.live.id}`}
                 className="flex items-center gap-4 p-4 rounded-xl table-row"
                 style={{ display: 'flex', textDecoration: 'none' }}>
                 <div className="w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
                   style={{ background: 'var(--bg-overlay)' }}>
                   <span style={{ fontSize: '1rem', fontWeight: 800, lineHeight: 1 }}>
-                    {live.date ? format(parseISO(live.date), 'd') : '?'}
+                    {ev.live.date ? format(parseISO(ev.live.date), 'd') : '?'}
                   </span>
                   <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                    {live.date ? format(parseISO(live.date), 'EEE', { locale: el }) : ''}
+                    {ev.live.date ? format(parseISO(ev.live.date), 'EEE', { locale: el }) : ''}
                   </span>
                 </div>
                 <div className="flex-1">
-                  <p style={{ fontWeight: 700 }}>{live.title}</p>
+                  <p style={{ fontWeight: 700 }}>{ev.live.title}</p>
                   <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    {live.venues?.name || live.city} {live.time_start ? `· ${formatTime(live.time_start)}` : ''}
+                    {ev.live.venues?.name || ev.live.city} {ev.live.time_start ? `· ${formatTime(ev.live.time_start)}` : ''}
                   </p>
                 </div>
-                <span className={`badge badge-${live.status}`}>{LIVE_STATUS_LABELS[live.status]}</span>
+                <span className={`badge badge-${ev.live.status}`}>{LIVE_STATUS_LABELS[ev.live.status]}</span>
+              </Link>
+            ) : (
+              <Link key={ev.project.id} href={`/projects/${ev.project.id}`}
+                className="flex items-center gap-4 p-4 rounded-xl table-row"
+                style={{ display: 'flex', textDecoration: 'none' }}>
+                <div className="w-10 h-10 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
+                  style={{ background: 'rgba(139,92,246,0.1)' }}>
+                  <span style={{ fontSize: '1rem', fontWeight: 800, lineHeight: 1 }}>
+                    {ev.project.date ? format(parseISO(ev.project.date), 'd') : '?'}
+                  </span>
+                  <span style={{ fontSize: '0.6rem', color: 'rgb(139,92,246)', textTransform: 'uppercase' }}>
+                    {ev.project.date ? format(parseISO(ev.project.date), 'EEE', { locale: el }) : ''}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <p style={{ fontWeight: 700 }}>{ev.project.title}</p>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{ev.project.type || 'Project'}</p>
+                </div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'rgba(139,92,246,0.15)', color: 'rgb(139,92,246)' }}>
+                  {ev.project.status || 'Project'}
+                </span>
               </Link>
             ))}
           </div>
