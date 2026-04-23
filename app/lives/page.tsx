@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, formatDate, formatTime } from '@/lib/utils'
 import { getLiveCategories, getLiveStatuses, getStatusLabel, getStatusBadgeClass, StatusEntry } from '@/lib/lists'
@@ -10,10 +11,10 @@ import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
 import { Music2, Plus, Search, Trash2, Eye, Calendar, Clock } from 'lucide-react'
-import Link from 'next/link'
 import type { Live, Client } from '@/lib/supabase'
 
 export default function LivesPage() {
+  const router = useRouter()
   const { toast } = useToast()
   const [lives, setLives] = useState<Live[]>([])
   const [clients, setClients] = useState<Client[]>([])
@@ -70,6 +71,18 @@ export default function LivesPage() {
     return matchSearch && matchStatus && matchCat && matchYear
   })
 
+  function openGoogleCalendar(title: string, date: string, color: number) {
+    if (!date) return
+    const start = date.replace(/-/g, '')
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    const end = d.toISOString().slice(0, 10).replace(/-/g, '')
+    window.open(
+      `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&color=${color}`,
+      '_blank'
+    )
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -95,6 +108,7 @@ export default function LivesPage() {
     setShowCreate(false)
     setForm(emptyForm)
     load()
+    openGoogleCalendar(form.title, form.date, 11)
   }
 
   async function handleDelete() {
@@ -194,7 +208,7 @@ export default function LivesPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
-                        <Link href={`/lives/${live.id}`} className="btn btn-ghost btn-xs" title="Προβολή"><Eye size={13} /></Link>
+                        <button onClick={() => router.push(`/lives/${live.id}`)} className="btn btn-ghost btn-xs" title="Προβολή"><Eye size={13} /></button>
                         <button onClick={() => setDeleteId(live.id)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
                       </div>
                     </td>

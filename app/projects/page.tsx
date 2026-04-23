@@ -69,6 +69,18 @@ export default function ProjectsPage() {
     setShowCreate(true)
   }
 
+  function openGoogleCalendar(title: string, date: string, color: number) {
+    if (!date) return
+    const start = date.replace(/-/g, '')
+    const d = new Date(date + 'T00:00:00')
+    d.setDate(d.getDate() + 1)
+    const end = d.toISOString().slice(0, 10).replace(/-/g, '')
+    window.open(
+      `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${start}/${end}&color=${color}`,
+      '_blank'
+    )
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -92,6 +104,7 @@ export default function ProjectsPage() {
     setSaving(false)
     if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
     toast(editItem ? 'Ενημερώθηκε!' : 'Project προστέθηκε!', 'success')
+    if (!editItem) openGoogleCalendar(form.title, form.date, 5)
     setShowCreate(false); load()
   }
 
