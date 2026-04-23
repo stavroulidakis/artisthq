@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, MUSICIAN_ROLES } from '@/lib/utils'
 import { getMusicianRoles } from '@/lib/lists'
@@ -9,11 +10,11 @@ import { EmptyState, Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { useToast } from '@/components/ui/Toast'
-import { UserCheck, Plus, Search, Trash2, Eye, Phone, Mail, Euro, ToggleLeft, ToggleRight, Camera } from 'lucide-react'
-import Link from 'next/link'
+import { UserCheck, Plus, Search, Trash2, Eye, ToggleLeft, ToggleRight, Camera } from 'lucide-react'
 import type { Musician } from '@/lib/supabase'
 
 export default function MusiciansPage() {
+  const router = useRouter()
   const { toast } = useToast()
   const [musicians, setMusicians] = useState<Musician[]>([])
   const [participationCounts, setParticipationCounts] = useState<Record<string, { count: number; total: number }>>({})
@@ -64,7 +65,7 @@ export default function MusiciansPage() {
   async function handleAvatarUpload(file: File, musicianId: string) {
     setUploadingAvatar(true)
     const ext = file.name.split('.').pop() || 'jpg'
-    const path = `musician-${musicianId}.${ext}`
+    const path = `musician-${musicianId}-${Date.now()}.${ext}`
     const { error: uploadError } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
     if (uploadError) { toast('Σφάλμα upload: ' + uploadError.message, 'error'); setUploadingAvatar(false); return }
     const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path)
@@ -137,63 +138,76 @@ export default function MusiciansPage() {
           <EmptyState icon={UserCheck} title="Δεν βρέθηκαν μουσικοί" description="Πρόσθεσε μουσικούς"
             action={<button className="btn btn-primary" onClick={openCreate}><Plus size={15} />Νέος</button>} />
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(m => {
-              const stats = participationCounts[m.id]
-              return (
-                <div key={m.id} className="card card-hover">
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center text-base font-bold flex-shrink-0"
-                        style={{ background: m.avatar_url ? 'transparent' : (m.is_active ? 'rgba(74,127,193,0.15)' : 'var(--bg-overlay)') }}>
-                        {m.avatar_url
-                          ? <img src={m.avatar_url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <span style={{ color: m.is_active ? 'var(--sea)' : 'var(--text-muted)', fontFamily: 'var(--font-display)' }}>{m.name.charAt(0)}</span>
-                        }
-                      </div>
-                      <div>
-                        <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{m.name}</h3>
-                        {m.role && <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{m.role}</p>}
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      <Link href={`/musicians/${m.id}`} className="btn btn-ghost btn-xs"><Eye size={13} /></Link>
-                      <button className="btn btn-ghost btn-xs" onClick={() => openEdit(m)}>✏️</button>
-                      <button className="btn btn-ghost btn-xs" onClick={() => handleToggleActive(m)}>
-                        {m.is_active ? <ToggleRight size={15} style={{ color: 'var(--green)' }} /> : <ToggleLeft size={15} />}
-                      </button>
-                      <button className="btn btn-ghost btn-xs" onClick={() => setDeleteId(m.id)}><Trash2 size={13} /></button>
-                    </div>
-                  </div>
-
-                  {m.default_fee && (
-                    <div className="flex items-center gap-1 mb-2">
-                      <Euro size={12} style={{ color: 'var(--amber)' }} />
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--amber)' }}>{formatCurrency(m.default_fee)}</span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>/ live</span>
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    {m.phone && <p className="flex items-center gap-2" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Phone size={11} />{m.phone}</p>}
-                    {m.email && <p className="flex items-center gap-2" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}><Mail size={11} /><span className="truncate">{m.email}</span></p>}
-                  </div>
-
-                  {stats && (
-                    <div className="mt-3 pt-3 border-t flex gap-4" style={{ borderColor: 'var(--border)' }}>
-                      <div>
-                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Συμμετοχές</p>
-                        <p style={{ fontWeight: 800, color: 'var(--sea)' }}>{stats.count}</p>
-                      </div>
-                      <div>
-                        <p style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Σύνολο</p>
-                        <p style={{ fontWeight: 800, color: 'var(--green)', fontSize: '0.9rem' }}>{formatCurrency(stats.total)}</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-overlay)' }}>
+                  {['Μουσικός', 'Ρόλος', 'Συμμετοχές', 'Σύνολο Αμοιβών', 'Κατάσταση', ''].map(h => (
+                    <th key={h} className="px-4 py-3 text-left"
+                      style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((m, i) => {
+                  const stats = participationCounts[m.id]
+                  return (
+                    <tr
+                      key={m.id}
+                      className="table-row"
+                      style={{ borderBottom: i < filtered.length - 1 ? '1px solid var(--border)' : 'none' }}
+                    >
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0"
+                            style={{ background: m.avatar_url ? 'transparent' : (m.is_active ? 'rgba(74,127,193,0.15)' : 'var(--bg-overlay)') }}>
+                            {m.avatar_url
+                              ? <img src={m.avatar_url} alt={m.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              : <span style={{ fontSize: '0.85rem', fontWeight: 800, color: m.is_active ? 'var(--sea)' : 'var(--text-muted)', fontFamily: 'var(--font-display)' }}>{m.name.charAt(0)}</span>
+                            }
+                          </div>
+                          <span style={{ fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--text-primary)' }}>{m.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5" style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+                        {m.role || '—'}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span style={{ fontWeight: 800, color: 'var(--sea)', fontSize: '0.9rem' }}>
+                          {stats?.count ?? 0}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: '0.9rem' }}>
+                          {stats ? formatCurrency(stats.total) : '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span style={{
+                          fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: 6,
+                          background: m.is_active ? 'rgba(72,187,120,0.15)' : 'var(--bg-overlay)',
+                          color: m.is_active ? 'var(--green)' : 'var(--text-muted)',
+                        }}>
+                          {m.is_active ? 'Ενεργός' : 'Ανενεργός'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex gap-1 justify-end">
+                          <button className="btn btn-ghost btn-xs" onClick={() => router.push(`/musicians/${m.id}`)}><Eye size={13} /></button>
+                          <button className="btn btn-ghost btn-xs" onClick={() => openEdit(m)}>✏️</button>
+                          <button className="btn btn-ghost btn-xs" onClick={() => handleToggleActive(m)}>
+                            {m.is_active ? <ToggleRight size={15} style={{ color: 'var(--green)' }} /> : <ToggleLeft size={15} />}
+                          </button>
+                          <button className="btn btn-ghost btn-xs" onClick={() => setDeleteId(m.id)}><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
