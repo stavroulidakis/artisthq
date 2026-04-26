@@ -6,8 +6,9 @@ import { supabase } from '@/lib/supabase'
 import {
   formatCurrency, formatDate, formatTime, formatDateLong,
   LIVE_STATUS_LABELS, LIVE_CATEGORIES, LIVE_STATUSES, PAYMENT_METHODS,
-  REGIONS, FINANCIAL_CATEGORIES, REMINDER_TYPES
+  REGIONS, REMINDER_TYPES
 } from '@/lib/utils'
+import { getFinancialCats } from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/PageHeader'
 import { Modal } from '@/components/ui/Modal'
@@ -16,7 +17,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import {
   Music2, Save, Edit2, X, Plus, Trash2, CheckCircle2, Circle,
   Euro, Users, Star, MessageSquare, TrendingDown, Calendar,
-  MapPin, Phone, Clock, AlertCircle, ArrowLeft
+  MapPin, Phone, Clock, AlertCircle, ArrowLeft, Download
 } from 'lucide-react'
 import Link from 'next/link'
 import type { Live, LiveMusician, Financial, Negotiation, Evaluation, Reminder, Musician, Client, Venue } from '@/lib/supabase'
@@ -30,6 +31,69 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
   { id: 'evaluation', label: 'Αξιολόγηση', icon: Star },
   { id: 'notes', label: 'Σημειώσεις', icon: MessageSquare },
 ]
+
+function buildGoogleCalendarUrl(live: Live): string {
+  const fmt = (date: string, time?: string | null) => {
+    const d = date.replace(/-/g, '')
+    if (!time) return d
+    const t = time.replace(/:/g, '').slice(0, 6).padEnd(6, '0')
+    return `${d}T${t}`
+  }
+  const start = live.date ? fmt(live.date, live.time_start) : ''
+  const end = live.date ? fmt(live.date, live.time_end || live.time_start) : ''
+  const dates = start ? `${start}/${end || start}` : ''
+  const location = [live.venues?.name, live.city, live.region].filter(Boolean).join(', ')
+  const details = [
+    live.clients?.name ? `Πελάτης: ${live.clients.name}` : '',
+    live.category ? `Κατηγορία: ${live.category}` : '',
+    live.notes || '',
+  ].filter(Boolean).join('\n')
+  const params = new URLSearchParams({ action: 'TEMPLATE', text: live.title })
+  if (dates) params.set('dates', dates)
+  if (location) params.set('location', location)
+  if (details) params.set('details', details)
+  return `https://calendar.google.com/calendar/render?${params.toString()}`
+}
+
+function exportIcs(live: Live): void {
+  const fmt = (date: string, time?: string | null) => {
+    const d = date.replace(/-/g, '')
+    if (!time) return d
+    const t = time.replace(/:/g, '').slice(0, 6).padEnd(6, '0')
+    return `${d}T${t}`
+  }
+  const hasTime = !!live.time_start
+  const dtStart = live.date ? fmt(live.date, live.time_start) : ''
+  const dtEnd = live.date ? fmt(live.date, live.time_end || live.time_start) : dtStart
+  const location = [live.venues?.name, live.city, live.region].filter(Boolean).join(', ')
+  const description = [
+    live.clients?.name ? `Πελάτης: ${live.clients.name}` : '',
+    live.category ? `Κατηγορία: ${live.category}` : '',
+    live.notes || '',
+  ].filter(Boolean).join('\\n')
+  const now = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z'
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ArtistHQ//EN', 'CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    `UID:live-${live.id}@artisthq`,
+    `DTSTAMP:${now}`,
+    `SUMMARY:${live.title}`,
+    ...(dtStart ? [
+      hasTime ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
+      hasTime ? `DTEND:${dtEnd}` : `DTEND;VALUE=DATE:${dtEnd}`,
+    ] : []),
+    ...(location ? [`LOCATION:${location}`] : []),
+    ...(description ? [`DESCRIPTION:${description}`] : []),
+    'END:VEVENT', 'END:VCALENDAR',
+  ]
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${live.title.replace(/[^\w\s-]/g, '_')}.ics`
+  document.body.appendChild(a); a.click()
+  document.body.removeChild(a); URL.revokeObjectURL(url)
+}
 
 export default function LiveDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -55,6 +119,9 @@ export default function LiveDetailPage() {
   const [showAddReminder, setShowAddReminder] = useState(false)
   const [deleteMusId, setDeleteMusId] = useState<string | null>(null)
   const [deleteFinId, setDeleteFinId] = useState<string | null>(null)
+
+  const [financialCats, setFinancialCats] = useState<string[]>([])
+  const [editFinItem, setEditFinItem] = useState<Financial | null>(null)
 
   const [musForm, setMusForm] = useState({ musician_id: '', agreed_fee: '' })
   const [finForm, setFinForm] = useState({ category: '', amount: '', description: '', paid_to: '' })
@@ -99,7 +166,10 @@ export default function LiveDetailPage() {
     setLoading(false)
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    load()
+    setFinancialCats(getFinancialCats())
+  }, [load])
 
   async function handleSave() {
     setSaving(true)
@@ -139,13 +209,26 @@ export default function LiveDetailPage() {
 
   async function handleAddFinancial(e: React.FormEvent) {
     e.preventDefault()
-    await supabase.from('financials').insert({
-      live_id: id, category: finForm.category || null,
-      amount: parseFloat(finForm.amount), description: finForm.description || null,
-      paid_to: finForm.paid_to || null,
-    })
-    toast('Καταχωρήθηκε!', 'success')
-    setShowAddFinancial(false); setFinForm({ category: '', amount: '', description: '', paid_to: '' }); load()
+    if (editFinItem) {
+      await supabase.from('financials').update({
+        category: finForm.category || null,
+        amount: parseFloat(finForm.amount),
+        description: finForm.description || null,
+        paid_to: finForm.paid_to || null,
+      }).eq('id', editFinItem.id)
+      toast('Ενημερώθηκε!', 'success')
+    } else {
+      await supabase.from('financials').insert({
+        live_id: id, category: finForm.category || null,
+        amount: parseFloat(finForm.amount), description: finForm.description || null,
+        paid_to: finForm.paid_to || null,
+      })
+      toast('Καταχωρήθηκε!', 'success')
+    }
+    setShowAddFinancial(false)
+    setEditFinItem(null)
+    setFinForm({ category: '', amount: '', description: '', paid_to: '' })
+    load()
   }
 
   async function handleSaveNegotiation(e: React.FormEvent) {
@@ -214,11 +297,18 @@ export default function LiveDetailPage() {
         subtitle={live.date ? formatDateLong(live.date) : 'Χωρίς ημερομηνία'}
         icon={<Music2 size={18} color="var(--terra)" />}
         action={
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Link href="/lives" className="btn btn-secondary btn-sm"><ArrowLeft size={14} />Πίσω</Link>
             <span className={`badge badge-${live.status}`} style={{ alignSelf: 'center' }}>
               {LIVE_STATUS_LABELS[live.status]}
             </span>
+            <a href={buildGoogleCalendarUrl(live)} target="_blank" rel="noopener noreferrer"
+              className="btn btn-secondary btn-sm" title="Προσθήκη στο Google Calendar">
+              <Calendar size={14} />Google Cal
+            </a>
+            <button onClick={() => exportIcs(live)} className="btn btn-secondary btn-sm" title="Λήψη .ics">
+              <Download size={14} />Export .ics
+            </button>
             {editing ? (
               <>
                 <button onClick={() => setEditing(false)} className="btn btn-secondary btn-sm"><X size={14} />Ακύρωση</button>
@@ -444,7 +534,19 @@ export default function LiveDetailPage() {
                         <td className="py-2 pr-3" style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>{f.musicians?.name || '—'}</td>
                         <td className="py-2 pr-3" style={{ fontWeight: 700, color: 'var(--red)' }}>{formatCurrency(f.amount)}</td>
                         <td className="py-2">
-                          <button onClick={() => setDeleteFinId(f.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                          <div className="flex gap-1">
+                            <button onClick={() => {
+                              setEditFinItem(f)
+                              setFinForm({
+                                category: f.category || '',
+                                amount: f.amount ? String(f.amount) : '',
+                                description: f.description || '',
+                                paid_to: f.paid_to || '',
+                              })
+                              setShowAddFinancial(true)
+                            }} className="btn btn-ghost btn-xs">✏️</button>
+                            <button onClick={() => setDeleteFinId(f.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -617,13 +719,18 @@ export default function LiveDetailPage() {
         </form>
       </Modal>
 
-      {/* ADD FINANCIAL MODAL */}
-      <Modal open={showAddFinancial} onClose={() => setShowAddFinancial(false)} title="Νέο Έξοδο / Χρέωση" size="sm">
+      {/* ADD / EDIT FINANCIAL MODAL */}
+      <Modal
+        open={showAddFinancial}
+        onClose={() => { setShowAddFinancial(false); setEditFinItem(null); setFinForm({ category: '', amount: '', description: '', paid_to: '' }) }}
+        title={editFinItem ? 'Επεξεργασία Εξόδου' : 'Νέο Έξοδο / Χρέωση'}
+        size="sm"
+      >
         <form onSubmit={handleAddFinancial} className="space-y-4">
           <div><label className="label">Κατηγορία</label>
             <select className="select" value={finForm.category} onChange={e => setFinForm({ ...finForm, category: e.target.value })}>
               <option value="">—</option>
-              {FINANCIAL_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              {financialCats.map(c => <option key={c} value={c}>{c}</option>)}
             </select></div>
           <div><label className="label">Ποσό (€) *</label>
             <input required type="number" step="0.01" className="input" value={finForm.amount}
@@ -636,8 +743,8 @@ export default function LiveDetailPage() {
               {allMusicians.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select></div>
           <div className="flex gap-3 justify-end">
-            <button type="button" onClick={() => setShowAddFinancial(false)} className="btn btn-secondary">Ακύρωση</button>
-            <button type="submit" className="btn btn-primary">Προσθήκη</button>
+            <button type="button" onClick={() => { setShowAddFinancial(false); setEditFinItem(null); setFinForm({ category: '', amount: '', description: '', paid_to: '' }) }} className="btn btn-secondary">Ακύρωση</button>
+            <button type="submit" className="btn btn-primary">{editFinItem ? 'Αποθήκευση' : 'Προσθήκη'}</button>
           </div>
         </form>
       </Modal>
