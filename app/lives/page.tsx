@@ -23,6 +23,7 @@ export default function LivesPage() {
   const [filterStatus, setFilterStatus] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterYear, setFilterYear] = useState('')
+  const [filterPeriod, setFilterPeriod] = useState<'upcoming' | 'all' | 'past'>('upcoming')
   const [showCreate, setShowCreate] = useState(false)
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -58,6 +59,8 @@ export default function LivesPage() {
     new Set(lives.map(l => l.date?.slice(0, 4)).filter(Boolean) as string[])
   ).sort().reverse()
 
+  const today = new Date().toISOString().slice(0, 10)
+
   const filtered = lives.filter(l => {
     const q = search.toLowerCase()
     const matchSearch = !q ||
@@ -68,7 +71,11 @@ export default function LivesPage() {
     const matchStatus = !filterStatus || l.status === filterStatus
     const matchCat = !filterCategory || l.category === filterCategory
     const matchYear = !filterYear || l.date?.startsWith(filterYear)
-    return matchSearch && matchStatus && matchCat && matchYear
+    const matchPeriod =
+      filterPeriod === 'all' ? true :
+      filterPeriod === 'past' ? (l.date ? l.date < today : false) :
+      (l.date ? l.date >= today : false) && l.status !== 'cancelled'
+    return matchSearch && matchStatus && matchCat && matchYear && matchPeriod
   })
 
   function openGoogleCalendar(title: string, date: string, color: number) {
@@ -153,6 +160,11 @@ export default function LivesPage() {
           <select className="select w-auto" value={filterYear} onChange={e => setFilterYear(e.target.value)}>
             <option value="">Όλα τα Έτη</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select className="select w-auto" value={filterPeriod} onChange={e => setFilterPeriod(e.target.value as any)}>
+            <option value="upcoming">Επερχόμενα</option>
+            <option value="all">Όλα</option>
+            <option value="past">Παρελθόν</option>
           </select>
         </div>
 

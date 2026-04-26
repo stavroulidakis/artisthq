@@ -11,6 +11,7 @@ import {
   getProjectTypes, getProjectStatuses, getExpenseCats,
   saveProjectTypes, saveProjectStatuses, saveExpenseCats,
   DEFAULT_PROJECT_TYPES, DEFAULT_PROJECT_STATUSES, DEFAULT_EXPENSE_CATS,
+  getFinancialCats, saveFinancialCats, DEFAULT_FINANCIAL_CATS,
 } from '@/lib/lists'
 import { PageHeader } from '@/components/ui/PageHeader'
 import { Spinner } from '@/components/ui/PageHeader'
@@ -66,6 +67,10 @@ export default function SettingsPage() {
   const [newProjStatus, setNewProjStatus] = useState('')
   const [newExpCat, setNewExpCat] = useState('')
 
+  // Financial cats state
+  const [financialCats, setFinancialCats] = useState<string[]>([])
+  const [newFinancialCat, setNewFinancialCat] = useState('')
+
   const load = useCallback(async () => {
     setLoading(true)
     const [{ data: s }, { data: v }] = await Promise.all([
@@ -95,6 +100,7 @@ export default function SettingsPage() {
     setProjTypes(getProjectTypes())
     setProjStatuses(getProjectStatuses())
     setExpCats(getExpenseCats())
+    setFinancialCats(getFinancialCats())
   }, [load])
 
   async function handleAvatarUpload(file: File) {
@@ -191,10 +197,7 @@ export default function SettingsPage() {
     const updated = [...roles, val]
     setRoles(updated); saveMusicianRoles(updated); setNewRole('')
   }
-  function removeRole(i: number) {
-    const updated = roles.filter((_, j) => j !== i)
-    setRoles(updated); saveMusicianRoles(updated)
-  }
+  function removeRole(i: number) { const u = roles.filter((_, j) => j !== i); setRoles(u); saveMusicianRoles(u) }
   function resetRoles() { setRoles(DEFAULT_ROLES); saveMusicianRoles(DEFAULT_ROLES) }
 
   function addCategory() {
@@ -203,10 +206,7 @@ export default function SettingsPage() {
     const updated = [...categories, val]
     setCategories(updated); saveLiveCategories(updated); setNewCategory('')
   }
-  function removeCategory(i: number) {
-    const updated = categories.filter((_, j) => j !== i)
-    setCategories(updated); saveLiveCategories(updated)
-  }
+  function removeCategory(i: number) { const u = categories.filter((_, j) => j !== i); setCategories(u); saveLiveCategories(u) }
   function resetCategories() { setCategories(DEFAULT_CATEGORIES); saveLiveCategories(DEFAULT_CATEGORIES) }
 
   function addStatus() {
@@ -215,10 +215,7 @@ export default function SettingsPage() {
     const updated = [...statuses, { value: label, label }]
     setStatuses(updated); saveLiveStatuses(updated); setNewStatusLabel('')
   }
-  function removeStatus(i: number) {
-    const updated = statuses.filter((_, j) => j !== i)
-    setStatuses(updated); saveLiveStatuses(updated)
-  }
+  function removeStatus(i: number) { const u = statuses.filter((_, j) => j !== i); setStatuses(u); saveLiveStatuses(u) }
   function resetStatuses() { setStatuses(DEFAULT_STATUSES); saveLiveStatuses(DEFAULT_STATUSES) }
 
   function addProjType() {
@@ -227,10 +224,7 @@ export default function SettingsPage() {
     const updated = [...projTypes, val]
     setProjTypes(updated); saveProjectTypes(updated); setNewProjType('')
   }
-  function removeProjType(i: number) {
-    const updated = projTypes.filter((_, j) => j !== i)
-    setProjTypes(updated); saveProjectTypes(updated)
-  }
+  function removeProjType(i: number) { const u = projTypes.filter((_, j) => j !== i); setProjTypes(u); saveProjectTypes(u) }
   function resetProjTypes() { setProjTypes(DEFAULT_PROJECT_TYPES); saveProjectTypes(DEFAULT_PROJECT_TYPES) }
 
   function addProjStatus() {
@@ -239,10 +233,7 @@ export default function SettingsPage() {
     const updated = [...projStatuses, val]
     setProjStatuses(updated); saveProjectStatuses(updated); setNewProjStatus('')
   }
-  function removeProjStatus(i: number) {
-    const updated = projStatuses.filter((_, j) => j !== i)
-    setProjStatuses(updated); saveProjectStatuses(updated)
-  }
+  function removeProjStatus(i: number) { const u = projStatuses.filter((_, j) => j !== i); setProjStatuses(u); saveProjectStatuses(u) }
   function resetProjStatuses() { setProjStatuses(DEFAULT_PROJECT_STATUSES); saveProjectStatuses(DEFAULT_PROJECT_STATUSES) }
 
   function addExpCat() {
@@ -251,11 +242,17 @@ export default function SettingsPage() {
     const updated = [...expCats, val]
     setExpCats(updated); saveExpenseCats(updated); setNewExpCat('')
   }
-  function removeExpCat(i: number) {
-    const updated = expCats.filter((_, j) => j !== i)
-    setExpCats(updated); saveExpenseCats(updated)
-  }
+  function removeExpCat(i: number) { const u = expCats.filter((_, j) => j !== i); setExpCats(u); saveExpenseCats(u) }
   function resetExpCats() { setExpCats(DEFAULT_EXPENSE_CATS); saveExpenseCats(DEFAULT_EXPENSE_CATS) }
+
+  function addFinancialCat() {
+    const val = newFinancialCat.trim()
+    if (!val || financialCats.includes(val)) return
+    const updated = [...financialCats, val]
+    setFinancialCats(updated); saveFinancialCats(updated); setNewFinancialCat('')
+  }
+  function removeFinancialCat(i: number) { const u = financialCats.filter((_, j) => j !== i); setFinancialCats(u); saveFinancialCats(u) }
+  function resetFinancialCats() { setFinancialCats(DEFAULT_FINANCIAL_CATS); saveFinancialCats(DEFAULT_FINANCIAL_CATS) }
 
   if (loading) return <Spinner />
 
@@ -300,7 +297,6 @@ export default function SettingsPage() {
                   {uploadingAvatar ? 'Ανέβασμα...' : 'Κλικ για αλλαγή φωτογραφίας'}
                 </p>
               </div>
-
               <div><label className="label">Όνομα Καλλιτέχνη</label>
                 <input className="input" value={form.artist_name} onChange={e => setForm({ ...form, artist_name: e.target.value })} /></div>
               <div><label className="label">Τύπος / Περιγραφή</label>
@@ -362,57 +358,20 @@ export default function SettingsPage() {
 
         {activeTab === 'lists' && (
           <div className="space-y-6 max-w-xl">
+
             {/* Musician Roles */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <List size={15} color="var(--sea)" />
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Ρόλοι Μουσικών</h3>
-                </div>
-                <button onClick={resetRoles} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
-              </div>
-              <div className="space-y-1 mb-3">
-                {roles.map((role, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{role}</span>
-                    <button onClick={() => removeRole(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {roles.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν ρόλοι.</p>}
-              </div>
-              <div className="flex gap-2">
-                <input className="input" placeholder="π.χ. Ακορντεονίστας" value={newRole}
-                  onChange={e => setNewRole(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addRole() } }} />
-                <button onClick={addRole} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
-              </div>
-            </div>
+            <ListCard title="Ρόλοι Μουσικών" color="var(--sea)" onReset={resetRoles}>
+              {roles.map((role, i) => <ListItem key={i} label={role} onRemove={() => removeRole(i)} />)}
+              {roles.length === 0 && <ListEmpty />}
+              <ListInput value={newRole} onChange={setNewRole} onAdd={addRole} placeholder="π.χ. Ακορντεονίστας" />
+            </ListCard>
 
             {/* Live Categories */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <List size={15} color="var(--terra)" />
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Κατηγορίες Live</h3>
-                </div>
-                <button onClick={resetCategories} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
-              </div>
-              <div className="space-y-1 mb-3">
-                {categories.map((cat, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{cat}</span>
-                    <button onClick={() => removeCategory(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {categories.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν κατηγορίες.</p>}
-              </div>
-              <div className="flex gap-2">
-                <input className="input" placeholder="π.χ. Χριστουγεννιάτικη Εκδήλωση" value={newCategory}
-                  onChange={e => setNewCategory(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCategory() } }} />
-                <button onClick={addCategory} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
-              </div>
-            </div>
+            <ListCard title="Κατηγορίες Live" color="var(--terra)" onReset={resetCategories}>
+              {categories.map((cat, i) => <ListItem key={i} label={cat} onRemove={() => removeCategory(i)} />)}
+              {categories.length === 0 && <ListEmpty />}
+              <ListInput value={newCategory} onChange={setNewCategory} onAdd={addCategory} placeholder="π.χ. Χριστουγεννιάτικη Εκδήλωση" />
+            </ListCard>
 
             {/* Live Statuses */}
             <div className="card">
@@ -433,7 +392,7 @@ export default function SettingsPage() {
                     <button onClick={() => removeStatus(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
                   </div>
                 ))}
-                {statuses.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν καταστάσεις.</p>}
+                {statuses.length === 0 && <ListEmpty />}
               </div>
               <div className="flex gap-2">
                 <input className="input" placeholder="π.χ. Αναβλήθηκε" value={newStatusLabel}
@@ -443,83 +402,34 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Financial Categories (Live expenses) */}
+            <ListCard title="Κατηγορίες Εξόδων Live" color="var(--green)" onReset={resetFinancialCats}>
+              {financialCats.map((c, i) => <ListItem key={i} label={c} onRemove={() => removeFinancialCat(i)} />)}
+              {financialCats.length === 0 && <ListEmpty />}
+              <ListInput value={newFinancialCat} onChange={setNewFinancialCat} onAdd={addFinancialCat} placeholder="π.χ. Ηχητική Κάλυψη" />
+            </ListCard>
+
             {/* Project Types */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <List size={15} color="var(--sea)" />
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Τύποι Projects</h3>
-                </div>
-                <button onClick={resetProjTypes} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
-              </div>
-              <div className="space-y-1 mb-3">
-                {projTypes.map((t, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{t}</span>
-                    <button onClick={() => removeProjType(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {projTypes.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν τύποι.</p>}
-              </div>
-              <div className="flex gap-2">
-                <input className="input" placeholder="π.χ. Ντοκιμαντέρ" value={newProjType}
-                  onChange={e => setNewProjType(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProjType() } }} />
-                <button onClick={addProjType} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
-              </div>
-            </div>
+            <ListCard title="Τύποι Projects" color="var(--sea)" onReset={resetProjTypes}>
+              {projTypes.map((t, i) => <ListItem key={i} label={t} onRemove={() => removeProjType(i)} />)}
+              {projTypes.length === 0 && <ListEmpty />}
+              <ListInput value={newProjType} onChange={setNewProjType} onAdd={addProjType} placeholder="π.χ. Ντοκιμαντέρ" />
+            </ListCard>
 
             {/* Project Statuses */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <List size={15} color="var(--terra)" />
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Statuses Projects</h3>
-                </div>
-                <button onClick={resetProjStatuses} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
-              </div>
-              <div className="space-y-1 mb-3">
-                {projStatuses.map((s, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{s}</span>
-                    <button onClick={() => removeProjStatus(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {projStatuses.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν statuses.</p>}
-              </div>
-              <div className="flex gap-2">
-                <input className="input" placeholder="π.χ. Παγωμένο" value={newProjStatus}
-                  onChange={e => setNewProjStatus(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addProjStatus() } }} />
-                <button onClick={addProjStatus} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
-              </div>
-            </div>
+            <ListCard title="Statuses Projects" color="var(--terra)" onReset={resetProjStatuses}>
+              {projStatuses.map((s, i) => <ListItem key={i} label={s} onRemove={() => removeProjStatus(i)} />)}
+              {projStatuses.length === 0 && <ListEmpty />}
+              <ListInput value={newProjStatus} onChange={setNewProjStatus} onAdd={addProjStatus} placeholder="π.χ. Παγωμένο" />
+            </ListCard>
 
-            {/* Expense Categories */}
-            <div className="card">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <List size={15} color="var(--amber)" />
-                  <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Κατηγορίες Εξόδων Projects</h3>
-                </div>
-                <button onClick={resetExpCats} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
-              </div>
-              <div className="space-y-1 mb-3">
-                {expCats.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{c}</span>
-                    <button onClick={() => removeExpCat(i)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
-                  </div>
-                ))}
-                {expCats.length === 0 && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν κατηγορίες.</p>}
-              </div>
-              <div className="flex gap-2">
-                <input className="input" placeholder="π.χ. Licensing" value={newExpCat}
-                  onChange={e => setNewExpCat(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addExpCat() } }} />
-                <button onClick={addExpCat} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
-              </div>
-            </div>
+            {/* Expense Categories (Projects) */}
+            <ListCard title="Κατηγορίες Εξόδων Projects" color="var(--amber)" onReset={resetExpCats}>
+              {expCats.map((c, i) => <ListItem key={i} label={c} onRemove={() => removeExpCat(i)} />)}
+              {expCats.length === 0 && <ListEmpty />}
+              <ListInput value={newExpCat} onChange={setNewExpCat} onAdd={addExpCat} placeholder="π.χ. Licensing" />
+            </ListCard>
+
           </div>
         )}
       </div>
@@ -565,6 +475,45 @@ export default function SettingsPage() {
         title="Διαγραφή Χώρου"
         message="Ο χώρος θα διαγραφεί μόνιμα."
       />
+    </div>
+  )
+}
+
+function ListCard({ title, color, onReset, children }: { title: string; color: string; onReset: () => void; children: React.ReactNode }) {
+  return (
+    <div className="card">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <List size={15} color={color} />
+          <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>{title}</h3>
+        </div>
+        <button onClick={onReset} className="btn btn-ghost btn-xs"><RotateCcw size={11} /> Προεπιλογές</button>
+      </div>
+      <div className="space-y-1 mb-3">{children}</div>
+    </div>
+  )
+}
+
+function ListItem({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="flex-1 py-1 px-2 rounded-lg text-sm" style={{ background: 'var(--bg-overlay)', color: 'var(--text-primary)' }}>{label}</span>
+      <button onClick={onRemove} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+    </div>
+  )
+}
+
+function ListEmpty() {
+  return <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Δεν υπάρχουν εγγραφές.</p>
+}
+
+function ListInput({ value, onChange, onAdd, placeholder }: { value: string; onChange: (v: string) => void; onAdd: () => void; placeholder: string }) {
+  return (
+    <div className="flex gap-2">
+      <input className="input" placeholder={placeholder} value={value}
+        onChange={e => onChange(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAdd() } }} />
+      <button onClick={onAdd} className="btn btn-primary btn-sm" style={{ whiteSpace: 'nowrap' }}><Plus size={14} />Προσθήκη</button>
     </div>
   )
 }

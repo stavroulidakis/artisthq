@@ -32,6 +32,10 @@ export function saveMusicianRoles(v: string[]): void { writeList('crm_roles', v)
 export function saveLiveCategories(v: string[]): void { writeList('crm_categories', v) }
 export function saveLiveStatuses(v: StatusEntry[]): void { writeList('crm_statuses', v) }
 
+export const DEFAULT_FINANCIAL_CATS = ['Αμοιβή Μουσικού', 'Μεταφορά', 'Φαγητό', 'Εξοπλισμός', 'Άλλο']
+export function getFinancialCats(): string[] { return readList<string>('crm_financial_cats', DEFAULT_FINANCIAL_CATS) }
+export function saveFinancialCats(v: string[]): void { writeList('crm_financial_cats', v) }
+
 export const DEFAULT_PROJECT_TYPES = ['Βίντεο Κλιπ', 'Ηχογράφηση', 'Festival', 'Συνεργασία', 'Παραγωγή', 'Άλλο']
 export const DEFAULT_PROJECT_STATUSES = ['Σχεδιασμός', 'Σε εξέλιξη', 'Ολοκληρωμένο', 'Ακυρωμένο']
 export const DEFAULT_EXPENSE_CATS = ['Σκηνοθεσία', 'Φωτογραφία', 'Μοντάζ', 'Studio', 'Εξοπλισμός', 'Μεταφορά', 'Catering', 'Άλλο']
