@@ -39,7 +39,7 @@ export default function LivesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     const [{ data: livesData, error: livesError }, { data: clientsData }] = await Promise.all([
-      supabase.from('lives').select('*, venues(name,city), clients(name)').order('date', { ascending: false }),
+      supabase.from('lives').select('*, venues(name,city), clients(name)').order('date', { ascending: true }),
       supabase.from('clients').select('id,name').order('name'),
     ])
     if (livesError) console.error('Lives load error:', livesError.message)
@@ -172,7 +172,7 @@ export default function LivesPage() {
               </thead>
               <tbody>
                 {filtered.map(live => (
-                  <tr key={live.id} className="table-row">
+                  <tr key={live.id} className="table-row" onClick={() => router.push(`/lives/${live.id}`)} style={{ cursor: 'pointer' }}>
                     <td className="px-4 py-3">
                       <p style={{ fontWeight: 700 }}>{live.title}</p>
                       {live.clients?.name && <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{live.clients.name}</p>}
@@ -207,7 +207,7 @@ export default function LivesPage() {
                         {live.is_paid ? 'Εξοφλήθη' : 'Ανεξόφλ.'}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                       <div className="flex gap-1">
                         <button onClick={() => router.push(`/lives/${live.id}`)} className="btn btn-ghost btn-xs" title="Προβολή"><Eye size={13} /></button>
                         <button onClick={() => setDeleteId(live.id)} className="btn btn-ghost btn-xs" title="Διαγραφή"><Trash2 size={13} /></button>
