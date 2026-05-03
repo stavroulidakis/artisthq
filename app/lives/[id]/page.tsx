@@ -122,6 +122,8 @@ export default function LiveDetailPage() {
 
   const [financialCats, setFinancialCats] = useState<string[]>([])
   const [editFinItem, setEditFinItem] = useState<Financial | null>(null)
+  const [editMusItem, setEditMusItem] = useState<LiveMusician | null>(null)
+  const [editMusForm, setEditMusForm] = useState({ agreed_fee: '', paid_fee: '', is_paid: false })
 
   const [musForm, setMusForm] = useState({ musician_id: '', agreed_fee: '' })
   const [finForm, setFinForm] = useState({ category: '', amount: '', description: '', paid_to: '' })
@@ -204,6 +206,20 @@ export default function LiveDetailPage() {
 
   async function handleToggleMusicianPaid(lm: LiveMusician) {
     await supabase.from('live_musicians').update({ is_paid: !lm.is_paid }).eq('id', lm.id)
+    load()
+  }
+
+  async function handleSaveMusician(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editMusItem) return
+    const { error } = await supabase.from('live_musicians').update({
+      agreed_fee: editMusForm.agreed_fee ? parseFloat(editMusForm.agreed_fee) : null,
+      paid_fee: editMusForm.paid_fee ? parseFloat(editMusForm.paid_fee) : null,
+      is_paid: editMusForm.is_paid,
+    }).eq('id', editMusItem.id)
+    if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
+    toast('Ενημερώθηκε!', 'success')
+    setEditMusItem(null)
     load()
   }
 
@@ -340,7 +356,7 @@ export default function LiveDetailPage() {
       </div>
 
       <div className="p-6">
-        {/* ==================== TAB: GENERAL ==================== */}
+        {/* TAB: GENERAL */}
         {tab === 'general' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card space-y-4">
@@ -440,10 +456,9 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* ==================== TAB: FINANCIAL ==================== */}
+        {/* TAB: FINANCIAL */}
         {tab === 'financial' && (
           <div className="space-y-4">
-            {/* Summary */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { label: 'Συμφωνηθέν', value: formatCurrency(live.agreed_amount), color: 'var(--green)' },
@@ -458,7 +473,6 @@ export default function LiveDetailPage() {
               ))}
             </div>
 
-            {/* Edit financial fields */}
             {editing && (
               <div className="card grid grid-cols-2 gap-4">
                 <div><label className="label">Συμφωνηθέν (€)</label>
@@ -512,7 +526,6 @@ export default function LiveDetailPage() {
               </div>
             )}
 
-            {/* Additional financials */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Έξοδα & Χρεώσεις</h3>
@@ -537,12 +550,7 @@ export default function LiveDetailPage() {
                           <div className="flex gap-1">
                             <button onClick={() => {
                               setEditFinItem(f)
-                              setFinForm({
-                                category: f.category || '',
-                                amount: f.amount ? String(f.amount) : '',
-                                description: f.description || '',
-                                paid_to: f.paid_to || '',
-                              })
+                              setFinForm({ category: f.category || '', amount: f.amount ? String(f.amount) : '', description: f.description || '', paid_to: f.paid_to || '' })
                               setShowAddFinancial(true)
                             }} className="btn btn-ghost btn-xs">✏️</button>
                             <button onClick={() => setDeleteFinId(f.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
@@ -562,7 +570,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* ==================== TAB: MUSICIANS ==================== */}
+        {/* TAB: MUSICIANS */}
         {tab === 'musicians' && (
           <div className="card">
             <div className="flex items-center justify-between mb-4">
@@ -592,7 +600,13 @@ export default function LiveDetailPage() {
                         </button>
                       </td>
                       <td className="py-3">
-                        <button onClick={() => setDeleteMusId(lm.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                        <div className="flex gap-1">
+                          <button onClick={() => {
+                            setEditMusForm({ agreed_fee: lm.agreed_fee ? String(lm.agreed_fee) : '', paid_fee: lm.paid_fee ? String(lm.paid_fee) : '', is_paid: lm.is_paid })
+                            setEditMusItem(lm)
+                          }} className="btn btn-ghost btn-xs">✏️</button>
+                          <button onClick={() => setDeleteMusId(lm.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -607,7 +621,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* ==================== TAB: NEGOTIATION ==================== */}
+        {/* TAB: NEGOTIATION */}
         {tab === 'negotiation' && (
           <div className="card">
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 16 }}>Στοιχεία Διαπραγμάτευσης</h3>
@@ -639,7 +653,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* ==================== TAB: EVALUATION ==================== */}
+        {/* TAB: EVALUATION */}
         {tab === 'evaluation' && (
           <div className="card">
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 16 }}>Αξιολόγηση Live</h3>
@@ -667,8 +681,7 @@ export default function LiveDetailPage() {
               ].map(({ name, label }) => (
                 <div key={name}>
                   <label className="label">Σημειώσεις: {label}</label>
-                  <textarea name={name} className="textarea" rows={2}
-                    defaultValue={(evaluation as any)?.[name] || ''} />
+                  <textarea name={name} className="textarea" rows={2} defaultValue={(evaluation as any)?.[name] || ''} />
                 </div>
               ))}
               <button type="submit" className="btn btn-primary"><Save size={14} />Αποθήκευση</button>
@@ -676,7 +689,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* ==================== TAB: NOTES ==================== */}
+        {/* TAB: NOTES */}
         {tab === 'notes' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card">
@@ -715,6 +728,31 @@ export default function LiveDetailPage() {
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setShowAddMusician(false)} className="btn btn-secondary">Ακύρωση</button>
             <button type="submit" className="btn btn-primary">Προσθήκη</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* EDIT MUSICIAN MODAL */}
+      <Modal open={!!editMusItem} onClose={() => setEditMusItem(null)} title="Επεξεργασία Αμοιβής" size="sm">
+        <form onSubmit={handleSaveMusician} className="space-y-4">
+          <div><label className="label">Μουσικός</label>
+            <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{editMusItem?.musicians?.name}</p></div>
+          <div><label className="label">Συμφωνηθείσα Αμοιβή (€)</label>
+            <input type="number" step="0.01" className="input" value={editMusForm.agreed_fee}
+              onChange={e => setEditMusForm({ ...editMusForm, agreed_fee: e.target.value })} /></div>
+          <div><label className="label">Πληρωμένη Αμοιβή (€)</label>
+            <input type="number" step="0.01" className="input" value={editMusForm.paid_fee}
+              onChange={e => setEditMusForm({ ...editMusForm, paid_fee: e.target.value })} /></div>
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" className="w-4 h-4" checked={editMusForm.is_paid}
+                onChange={e => setEditMusForm({ ...editMusForm, is_paid: e.target.checked })} />
+              <span className="text-sm font-semibold">Πληρώθηκε</span>
+            </label>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button type="button" onClick={() => setEditMusItem(null)} className="btn btn-secondary">Ακύρωση</button>
+            <button type="submit" className="btn btn-primary">Αποθήκευση</button>
           </div>
         </form>
       </Modal>
