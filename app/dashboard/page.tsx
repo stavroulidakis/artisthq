@@ -14,7 +14,7 @@ import {
 } from 'recharts'
 import { format, subMonths, startOfMonth, endOfMonth, parseISO, isAfter } from 'date-fns'
 import { el } from 'date-fns/locale'
-import type { Live, Reminder } from '@/lib/supabase'
+import type { Live, Reminder, Project } from '@/lib/supabase'
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
@@ -22,20 +22,36 @@ export default function DashboardPage() {
   const [lives, setLives] = useState<Live[]>([])
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [monthlyData, setMonthlyData] = useState<any[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [allMusicians, setAllMusicians] = useState<{ live_id: string; agreed_fee?: number }[]>([])
+  const [allFinancials, setAllFinancials] = useState<{ live_id: string; amount?: number }[]>([])
 
   useEffect(() => { loadAll() }, [])
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: livesData }, { data: remindersData }, { data: settings }] = await Promise.all([
+    const [
+      { data: livesData },
+      { data: remindersData },
+      { data: settings },
+      { data: projectsData },
+      { data: musiciansData },
+      { data: financialsData },
+    ] = await Promise.all([
       supabase.from('lives').select('*, venues(name,city), clients(name)').order('date', { ascending: false }),
       supabase.from('reminders').select('*, lives(title,date)').eq('is_done', false).order('due_date'),
       supabase.from('settings').select('artist_name').single(),
+      supabase.from('projects').select('*').order('date', { ascending: false }),
+      supabase.from('live_musicians').select('live_id, agreed_fee'),
+      supabase.from('financials').select('live_id, amount'),
     ])
     if (settings?.artist_name) setArtistName(settings.artist_name)
     const allLives = (livesData || []) as Live[]
     setLives(allLives)
     setReminders((remindersData || []) as Reminder[])
+    setProjects((projectsData || []) as Project[])
+    setAllMusicians((musiciansData || []) as { live_id: string; agreed_fee?: number }[])
+    setAllFinancials((financialsData || []) as { live_id: string; amount?: number }[])
 
     const months = Array.from({ length: 6 }, (_, i) => {
       const d = subMonths(new Date(), 5 - i)
@@ -56,11 +72,53 @@ export default function DashboardPage() {
   const thisMonthStart = format(startOfMonth(now), 'yyyy-MM-dd')
   const thisMonthEnd = format(endOfMonth(now), 'yyyy-MM-dd')
 
-  const thisMonthLives = lives.filter(l => l.date && l.date >= thisMonthStart && l.date <= thisMonthEnd && l.status !== 'cancelled')
-  const monthIncome = thisMonthLives.reduce((s, l) => s + (l.agreed_amount || 0), 0)
-  const monthCount = thisMonthLives.length
+  const thisMonthLives = lives.filter(l =>
+    l.date && l.date >= thisMonthStart && l.date <= thisMonthEnd && l.status !== 'cancelled'
+  )
+  const thisMonthProjects = projects.filter(p =>
+    p.date && p.date >= thisMonthStart && p.date <= thisMonthEnd
+  )
+
+  // KPI 1: ΤΖΙΡΟΣ ΜΗΝΑ — agreed_amount/budget ανεξαρτήτως πληρωμής
+  const tziros = thisMonthLives.reduce((s, l) => s + (l.agreed_amount || 0), 0)
+             + thisMonthProjects.reduce((s, p) => s + (p.budget || 0), 0)
+
+  // KPI 2: ΕΙΣΠΡΑΞΕΙΣ ΜΗΝΑ — μόνο πληρωμένα
+  const paidLivesThisMonth = thisMonthLives.filter(l => l.is_paid)
+  const completedProjectsThisMonth = thisMonthProjects.filter(p => p.status === 'Ολοκληρωμένο')
+  const eispraksis =
+    paidLivesThisMonth.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0) +
+    completedProjectsThisMonth.reduce((s, p) => s + (p.budget || 0), 0)
+
+  // KPI 3: ΚΑΘΑΡΟ ΚΕΡΔΟΣ — εισπράξεις μείον κόστη μόνο των πληρωμένων
+  const paidLiveIds = new Set(paidLivesThisMonth.map(l => l.id))
+  const musicianFees = allMusicians
+    .filter(m => paidLiveIds.has(m.live_id))
+    .reduce((s, m) => s + (m.agreed_fee || 0), 0)
+  const liveExpenses = allFinancials
+    .filter(f => paidLiveIds.has(f.live_id))
+    .reduce((s, f) => s + (f.amount || 0), 0)
+  const projectExpenses = completedProjectsThisMonth.reduce((s, p) => {
+    const total = Object.values(p.expenses || {}).reduce((a: number, b: number) => a + b, 0)
+    return s + total
+  }, 0)
+  const netProfit = eispraksis - musicianFees - liveExpenses - projectExpenses
+
+  // KPI 4: ΠΡΟΓΡΑΜΜΑΤΙΣΜΕΝΑ ΕΣΟΔΑ — μελλοντικά, απλήρωτα, με συμφωνημένο ποσό
+  const futureLives = lives.filter(l =>
+    l.date && isAfter(parseISO(l.date), now) && !l.is_paid && l.status !== 'cancelled' && l.agreed_amount != null
+  )
+  const futureProjects = projects.filter(p =>
+    p.date && isAfter(parseISO(p.date), now) && p.status !== 'Ολοκληρωμένο' && p.budget != null
+  )
+  const programmatistaEsoda =
+    futureLives.reduce((s, l) => s + (l.agreed_amount || 0), 0) +
+    futureProjects.reduce((s, p) => s + (p.budget || 0), 0)
+
+  // Για τον πίνακα Unpaid Lives (παραμένει)
   const unpaidLives = lives.filter(l => !l.is_paid && l.status === 'confirmed' && l.agreed_amount)
   const totalUnpaid = unpaidLives.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0)
+
   const upcomingLives = lives
     .filter(l => l.date && isAfter(parseISO(l.date), now) && l.status !== 'cancelled')
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
@@ -79,16 +137,42 @@ export default function DashboardPage() {
       <div className="p-5 space-y-4">
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard title="Έσοδα Μήνα" value={formatCurrency(monthIncome)} sub={`${monthCount} lives`} icon={<TrendingUp size={15} />} color="green" />
-          <StatCard title="Ανεξόφλητα" value={formatCurrency(totalUnpaid)} sub={`${unpaidLives.length} lives`} icon={<AlertCircle size={15} />} color="terra" />
-          <StatCard title="Επόμενα Lives" value={String(upcomingLives.length)} sub="προγραμματισμένα" icon={<Calendar size={15} />} color="sea" />
-          <StatCard title="Υπενθυμίσεις" value={String(reminders.length)} sub="εκκρεμείς" icon={<Bell size={15} />} color="amber" />
+          <StatCard
+            title="🎤 Τζίρος Μήνα"
+            value={formatCurrency(tziros)}
+            sub={`${thisMonthLives.length} lives + ${thisMonthProjects.length} projects`}
+            icon={<TrendingUp size={15} />}
+            color="sea"
+          />
+          <StatCard
+            title="💰 Εισπράξεις Μήνα"
+            value={formatCurrency(eispraksis)}
+            sub={`${paidLivesThisMonth.length} πληρωμένα`}
+            icon={<TrendingUp size={15} />}
+            color="green"
+          />
+          <StatCard
+            title="📈 Καθαρό Κέρδος"
+            value={formatCurrency(netProfit)}
+            sub="έσοδα − αμοιβές − έξοδα"
+            icon={<TrendingUp size={15} />}
+            color={netProfit >= 0 ? 'amber' : 'terra'}
+          />
+          <StatCard
+            title="🔮 Προγρ. Έσοδα"
+            value={formatCurrency(programmatistaEsoda)}
+            sub={`${futureLives.length + futureProjects.length} εκκρεμή`}
+            icon={<Clock size={15} />}
+            color="terra"
+          />
         </div>
 
         {/* Chart + Reminders */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="card lg:col-span-2" style={{ padding: '14px 16px' }}>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 10 }}>Έσοδα τελευταίων 6 μηνών</h2>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 10 }}>
+              Έσοδα τελευταίων 6 μηνών
+            </h2>
             <ResponsiveContainer width="100%" height={150}>
               <AreaChart data={monthlyData} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                 <defs>
@@ -99,8 +183,13 @@ export default function DashboardPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false}
-                  tickFormatter={v => `€${(v / 1000).toFixed(0)}k`} width={36} />
+                <YAxis
+                  tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={v => `€${(v / 1000).toFixed(0)}k`}
+                  width={36}
+                />
                 <Tooltip
                   contentStyle={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.8rem' }}
                   formatter={(v: any) => [formatCurrency(v), 'Έσοδα']}
@@ -126,8 +215,12 @@ export default function DashboardPage() {
                     <Bell size={12} style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 2 }} />
                     <div className="min-w-0">
                       <p style={{ fontSize: '0.78rem', fontWeight: 600 }} className="truncate">{r.type || r.notes}</p>
-                      {r.lives?.title && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }} className="truncate">{r.lives.title}</p>}
-                      {r.due_date && <p style={{ fontSize: '0.68rem', color: 'var(--terra)' }}>{formatDate(r.due_date)}</p>}
+                      {r.lives?.title && (
+                        <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }} className="truncate">{r.lives.title}</p>
+                      )}
+                      {r.due_date && (
+                        <p style={{ fontSize: '0.68rem', color: 'var(--terra)' }}>{formatDate(r.due_date)}</p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -143,15 +236,22 @@ export default function DashboardPage() {
             <Link href="/lives" style={{ color: 'var(--terra)', fontSize: '0.75rem' }}>Όλα →</Link>
           </div>
           {upcomingLives.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '12px 0' }}>Δεν υπάρχουν επερχόμενα lives</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '12px 0' }}>
+              Δεν υπάρχουν επερχόμενα lives
+            </p>
           ) : (
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {upcomingLives.map(live => (
-                <Link key={live.id} href={`/lives/${live.id}`}
+                <Link
+                  key={live.id}
+                  href={`/lives/${live.id}`}
                   className="flex items-center gap-3 py-2 table-row"
-                  style={{ display: 'flex', textDecoration: 'none' }}>
-                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex flex-col items-center justify-center text-center"
-                    style={{ background: 'var(--terra-glow)', border: '1px solid rgba(232,96,76,0.2)' }}>
+                  style={{ display: 'flex', textDecoration: 'none' }}
+                >
+                  <div
+                    className="flex-shrink-0 w-9 h-9 rounded-lg flex flex-col items-center justify-center text-center"
+                    style={{ background: 'var(--terra-glow)', border: '1px solid rgba(232,96,76,0.2)' }}
+                  >
                     <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--terra)', lineHeight: 1 }}>
                       {live.date ? format(parseISO(live.date), 'd') : '?'}
                     </span>
@@ -176,9 +276,19 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`badge badge-${live.status}`}>{LIVE_STATUS_LABELS[live.status]}</span>
-                    {live.agreed_amount && (
-                      <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: '0.82rem' }}>
+                    {live.agreed_amount ? (
+                      <span style={{
+                        fontWeight: 700, fontSize: '0.78rem', color: 'var(--green)',
+                        background: 'var(--green-glow)', padding: '2px 8px', borderRadius: 6,
+                      }}>
                         {formatCurrency(live.agreed_amount)}
+                      </span>
+                    ) : (
+                      <span style={{
+                        fontWeight: 600, fontSize: '0.72rem', color: 'var(--amber)',
+                        background: 'var(--amber-glow)', padding: '2px 8px', borderRadius: 6,
+                      }}>
+                        Χωρίς ποσό
                       </span>
                     )}
                     <ChevronRight size={14} style={{ color: 'var(--text-muted)' }} />
@@ -201,9 +311,12 @@ export default function DashboardPage() {
             </div>
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {unpaidLives.slice(0, 5).map(live => (
-                <Link key={live.id} href={`/lives/${live.id}`}
+                <Link
+                  key={live.id}
+                  href={`/lives/${live.id}`}
                   className="flex items-center justify-between py-2 table-row"
-                  style={{ display: 'flex', textDecoration: 'none' }}>
+                  style={{ display: 'flex', textDecoration: 'none' }}
+                >
                   <div className="flex items-center gap-2">
                     <Music2 size={13} color="var(--text-muted)" />
                     <div>
@@ -212,7 +325,9 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span style={{ fontWeight: 700, color: 'var(--amber)', fontSize: '0.85rem' }}>{formatCurrency(live.balance || live.agreed_amount)}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--amber)', fontSize: '0.85rem' }}>
+                      {formatCurrency(live.balance || live.agreed_amount)}
+                    </span>
                     <span className="badge badge-unpaid">Ανεξόφλητο</span>
                   </div>
                 </Link>
@@ -238,7 +353,9 @@ function StatCard({ title, value, sub, icon, color }: {
   return (
     <div className={`stat-card ${color} animate-in`} style={{ padding: '12px 14px' }}>
       <div className="flex items-center justify-between mb-2">
-        <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</p>
+        <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+          {title}
+        </p>
         <div className="w-7 h-7 rounded-md flex items-center justify-center"
           style={{ background: colors[color].bg, color: colors[color].text }}>
           {icon}
