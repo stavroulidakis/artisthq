@@ -35,13 +35,6 @@ const PRESET_LABELS: Record<RangePreset, string> = {
   custom: 'Προσαρμοσμένο',
 }
 
-interface RawRow {
-  agreed_fee: number | null
-  paid_fee: number | null
-  musicians: { name: string } | null
-  lives: { date: string | null; status: string } | null
-}
-
 interface MusicianRow {
   name: string
   count: number
@@ -50,7 +43,7 @@ interface MusicianRow {
 
 export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
-  const [rows, setRows] = useState<RawRow[]>([])
+  const [rows, setRows] = useState<any[]>([])
   const [preset, setPreset] = useState<RangePreset>('year')
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
@@ -60,7 +53,7 @@ export default function ReportsPage() {
       .from('live_musicians')
       .select('agreed_fee, paid_fee, musicians(name), lives(date, status)')
       .then(({ data }) => {
-        setRows((data || []) as RawRow[])
+        setRows(data || [])
         setLoading(false)
       })
   }, [])
@@ -68,15 +61,17 @@ export default function ReportsPage() {
   const { start, end } = getRange(preset, customFrom, customTo)
 
   const inRange = rows.filter(r => {
-    const d = r.lives?.date
+    const livesObj = Array.isArray(r.lives) ? r.lives[0] : r.lives
+    const d = livesObj?.date
     if (!d) return false
-    if (r.lives?.status === 'cancelled') return false
+    if (livesObj?.status === 'cancelled') return false
     return d >= start && d <= end
   })
 
   const byMusician: Record<string, MusicianRow> = {}
   inRange.forEach(r => {
-    const name = r.musicians?.name || 'Άγνωστος'
+    const musObj = Array.isArray(r.musicians) ? r.musicians[0] : r.musicians
+    const name = musObj?.name || 'Άγνωστος'
     const fee = r.agreed_fee || r.paid_fee || 0
     if (!byMusician[name]) byMusician[name] = { name, count: 0, total: 0 }
     byMusician[name].count++
@@ -98,7 +93,6 @@ export default function ReportsPage() {
       />
 
       <div className="p-5 space-y-4">
-        {/* Date range filter */}
         <div className="flex flex-wrap items-center gap-2">
           {(['year', 'last_year', 'month', 'last_month', 'custom'] as RangePreset[]).map(p => (
             <button key={p} onClick={() => setPreset(p)}
@@ -118,7 +112,6 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* Musician fees table */}
         <div className="card" style={{ padding: '14px 16px' }}>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 12 }}>
             Αμοιβές Μουσικών — {PRESET_LABELS[preset]}
