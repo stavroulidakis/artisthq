@@ -51,7 +51,7 @@ export default function ReportsPage() {
   useEffect(() => {
     supabase
       .from('live_musicians')
-      .select('agreed_fee, paid_fee, musicians(name), lives(date, status)')
+      .select('live_id, agreed_fee, paid_fee, musicians(name), lives(date, status)')
       .then(({ data }) => {
         setRows(data || [])
         setLoading(false)
@@ -59,17 +59,30 @@ export default function ReportsPage() {
   }, [])
 
   const { start, end } = getRange(preset, customFrom, customTo)
+  const today = format(new Date(), 'yyyy-MM-dd')
 
   const inRange = rows.filter(r => {
     const livesObj = Array.isArray(r.lives) ? r.lives[0] : r.lives
     const d = livesObj?.date
     if (!d) return false
     if (livesObj?.status === 'cancelled') return false
+    if (d > today) return false
     return d >= start && d <= end
   })
 
+  // Deduplicate: μόνο μία εγγραφή ανά (musician + live_id)
+  const seen = new Set<string>()
+  const unique = inRange.filter(r => {
+    const musObj = Array.isArray(r.musicians) ? r.musicians[0] : r.musicians
+    const name = musObj?.name || 'Άγνωστος'
+    const key = `${name}::${r.live_id}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
   const byMusician: Record<string, MusicianRow> = {}
-  inRange.forEach(r => {
+  unique.forEach(r => {
     const musObj = Array.isArray(r.musicians) ? r.musicians[0] : r.musicians
     const name = musObj?.name || 'Άγνωστος'
     const fee = r.agreed_fee || r.paid_fee || 0
@@ -88,7 +101,7 @@ export default function ReportsPage() {
     <div className="animate-in">
       <PageHeader
         title="Αναφορές"
-        subtitle="Αμοιβές μουσικών ανά διάστημα"
+        subtitle="Αμοιβές μουσικών για ολοκληρωμένες εμφανίσεις"
         icon={<Users size={18} color="var(--terra)" />}
       />
 
