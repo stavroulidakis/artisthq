@@ -113,7 +113,6 @@ export default function LiveDetailPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState<any>({})
 
-  // Modals
   const [showAddMusician, setShowAddMusician] = useState(false)
   const [showAddFinancial, setShowAddFinancial] = useState(false)
   const [showAddReminder, setShowAddReminder] = useState(false)
@@ -356,7 +355,7 @@ export default function LiveDetailPage() {
       </div>
 
       <div className="p-6">
-        {/* TAB: GENERAL */}
+        {/* ==================== TAB: GENERAL ==================== */}
         {tab === 'general' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card space-y-4">
@@ -456,9 +455,10 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* TAB: FINANCIAL */}
+        {/* ==================== TAB: FINANCIAL ==================== */}
         {tab === 'financial' && (
           <div className="space-y-4">
+            {/* KPI cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { label: 'Συμφωνηθέν', value: formatCurrency(live.agreed_amount), color: 'var(--green)' },
@@ -473,6 +473,35 @@ export default function LiveDetailPage() {
               ))}
             </div>
 
+            {/* Profit breakdown */}
+            <div className="card" style={{ padding: '14px 18px' }}>
+              <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '0.88rem', fontWeight: 700, marginBottom: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Ανάλυση Κέρδους
+              </h3>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between py-1">
+                  <span style={{ fontSize: '0.85rem' }}>Συμφωνήθηκε</span>
+                  <span style={{ fontWeight: 700, color: 'var(--green)', fontSize: '0.9rem' }}>{formatCurrency(live.agreed_amount)}</span>
+                </div>
+                <div className="flex items-center justify-between py-1" style={{ borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Μείον Έξοδα Παραγωγής</span>
+                  <span style={{ fontWeight: 700, color: 'var(--red)', fontSize: '0.9rem' }}>− {formatCurrency(totalExpenses)}</span>
+                </div>
+                <div className="flex items-center justify-between py-1" style={{ borderTop: '1px solid var(--border)' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Μείον Αμοιβές Μουσικών</span>
+                  <span style={{ fontWeight: 700, color: 'var(--red)', fontSize: '0.9rem' }}>− {formatCurrency(totalMusicianFees)}</span>
+                </div>
+                <div className="flex items-center justify-between py-2 px-3 rounded-lg"
+                  style={{ borderTop: '2px solid var(--border)', marginTop: 4, background: 'var(--bg-overlay)' }}>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>= Καθαρό Κέρδος</span>
+                  <span style={{ fontWeight: 800, fontSize: '1.1rem', color: netProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {formatCurrency(netProfit)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Edit financial fields */}
             {editing && (
               <div className="card grid grid-cols-2 gap-4">
                 <div><label className="label">Συμφωνηθέν (€)</label>
@@ -526,6 +555,7 @@ export default function LiveDetailPage() {
               </div>
             )}
 
+            {/* Additional financials */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Έξοδα & Χρεώσεις</h3>
@@ -550,7 +580,12 @@ export default function LiveDetailPage() {
                           <div className="flex gap-1">
                             <button onClick={() => {
                               setEditFinItem(f)
-                              setFinForm({ category: f.category || '', amount: f.amount ? String(f.amount) : '', description: f.description || '', paid_to: f.paid_to || '' })
+                              setFinForm({
+                                category: f.category || '',
+                                amount: f.amount ? String(f.amount) : '',
+                                description: f.description || '',
+                                paid_to: f.paid_to || '',
+                              })
                               setShowAddFinancial(true)
                             }} className="btn btn-ghost btn-xs">✏️</button>
                             <button onClick={() => setDeleteFinId(f.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
@@ -570,7 +605,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* TAB: MUSICIANS */}
+        {/* ==================== TAB: MUSICIANS ==================== */}
         {tab === 'musicians' && (
           <div className="card">
             <div className="flex items-center justify-between mb-4">
@@ -602,7 +637,11 @@ export default function LiveDetailPage() {
                       <td className="py-3">
                         <div className="flex gap-1">
                           <button onClick={() => {
-                            setEditMusForm({ agreed_fee: lm.agreed_fee ? String(lm.agreed_fee) : '', paid_fee: lm.paid_fee ? String(lm.paid_fee) : '', is_paid: lm.is_paid })
+                            setEditMusForm({
+                              agreed_fee: lm.agreed_fee ? String(lm.agreed_fee) : '',
+                              paid_fee: lm.paid_fee ? String(lm.paid_fee) : '',
+                              is_paid: lm.is_paid,
+                            })
                             setEditMusItem(lm)
                           }} className="btn btn-ghost btn-xs">✏️</button>
                           <button onClick={() => setDeleteMusId(lm.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
@@ -621,7 +660,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* TAB: NEGOTIATION */}
+        {/* ==================== TAB: NEGOTIATION ==================== */}
         {tab === 'negotiation' && (
           <div className="card">
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 16 }}>Στοιχεία Διαπραγμάτευσης</h3>
@@ -653,7 +692,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* TAB: EVALUATION */}
+        {/* ==================== TAB: EVALUATION ==================== */}
         {tab === 'evaluation' && (
           <div className="card">
             <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, marginBottom: 16 }}>Αξιολόγηση Live</h3>
@@ -681,7 +720,8 @@ export default function LiveDetailPage() {
               ].map(({ name, label }) => (
                 <div key={name}>
                   <label className="label">Σημειώσεις: {label}</label>
-                  <textarea name={name} className="textarea" rows={2} defaultValue={(evaluation as any)?.[name] || ''} />
+                  <textarea name={name} className="textarea" rows={2}
+                    defaultValue={(evaluation as any)?.[name] || ''} />
                 </div>
               ))}
               <button type="submit" className="btn btn-primary"><Save size={14} />Αποθήκευση</button>
@@ -689,7 +729,7 @@ export default function LiveDetailPage() {
           </div>
         )}
 
-        {/* TAB: NOTES */}
+        {/* ==================== TAB: NOTES ==================== */}
         {tab === 'notes' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="card">

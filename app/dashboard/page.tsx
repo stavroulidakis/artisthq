@@ -12,9 +12,47 @@ import Link from 'next/link'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
 } from 'recharts'
-import { format, subMonths, startOfMonth, endOfMonth, parseISO, isAfter } from 'date-fns'
+import {
+  format, subMonths, subYears,
+  startOfMonth, endOfMonth,
+  startOfYear, endOfYear,
+  parseISO, isAfter
+} from 'date-fns'
 import { el } from 'date-fns/locale'
 import type { Live, Reminder, Project } from '@/lib/supabase'
+
+type RangePreset = 'year' | 'last_year' | 'month' | 'last_month' | 'custom'
+
+const _now = new Date()
+
+function getRange(preset: RangePreset, customFrom: string, customTo: string): { start: string; end: string } {
+  const n = new Date()
+  if (preset === 'year') return {
+    start: format(startOfYear(n), 'yyyy-MM-dd'),
+    end: format(endOfYear(n), 'yyyy-MM-dd'),
+  }
+  if (preset === 'last_year') {
+    const ly = subYears(n, 1)
+    return { start: format(startOfYear(ly), 'yyyy-MM-dd'), end: format(endOfYear(ly), 'yyyy-MM-dd') }
+  }
+  if (preset === 'month') return {
+    start: format(startOfMonth(n), 'yyyy-MM-dd'),
+    end: format(endOfMonth(n), 'yyyy-MM-dd'),
+  }
+  if (preset === 'last_month') {
+    const lm = subMonths(n, 1)
+    return { start: format(startOfMonth(lm), 'yyyy-MM-dd'), end: format(endOfMonth(lm), 'yyyy-MM-dd') }
+  }
+  return { start: customFrom, end: customTo }
+}
+
+const PRESETS: { key: RangePreset; label: string }[] = [
+  { key: 'year', label: 'Φέτος' },
+  { key: 'last_year', label: 'Πέρυσι' },
+  { key: 'month', label: 'Τρέχων μήνας' },
+  { key: 'last_month', label: 'Προηγ. μήνας' },
+  { key: 'custom', label: 'Custom' },
+]
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
@@ -25,6 +63,10 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([])
   const [allMusicians, setAllMusicians] = useState<{ live_id: string; agreed_fee?: number }[]>([])
   const [allFinancials, setAllFinancials] = useState<{ live_id: string; amount?: number }[]>([])
+
+  const [preset, setPreset] = useState<RangePreset>('year')
+  const [customFrom, setCustomFrom] = useState(format(startOfYear(new Date()), 'yyyy-MM-dd'))
+  const [customTo, setCustomTo] = useState(format(endOfYear(new Date()), 'yyyy-MM-dd'))
 
   useEffect(() => { loadAll() }, [])
 
@@ -53,8 +95,9 @@ export default function DashboardPage() {
     setAllMusicians((musiciansData || []) as { live_id: string; agreed_fee?: number }[])
     setAllFinancials((financialsData || []) as { live_id: string; amount?: number }[])
 
+    const now = new Date()
     const months = Array.from({ length: 6 }, (_, i) => {
-      const d = subMonths(new Date(), 5 - i)
+      const d = subMonths(now, 5 - i)
       const ms = format(startOfMonth(d), 'yyyy-MM-dd')
       const me = format(endOfMonth(d), 'yyyy-MM-dd')
       const monthLives = allLives.filter(l => l.date && l.date >= ms && l.date <= me && l.status !== 'cancelled')
@@ -69,42 +112,46 @@ export default function DashboardPage() {
   }
 
   const now = new Date()
-  const thisMonthStart = format(startOfMonth(now), 'yyyy-MM-dd')
-  const thisMonthEnd = format(endOfMonth(now), 'yyyy-MM-dd')
+  const { start: rangeStart, end: rangeEnd } = getRange(preset, customFrom, customTo)
 
-  const thisMonthLives = lives.filter(l =>
-    l.date && l.date >= thisMonthStart && l.date <= thisMonthEnd && l.status !== 'cancelled'
+  // --- Lives & projects in selected range ---
+  const rangeLives = lives.filter(l =>
+    l.date && l.date >= rangeStart && l.date <= rangeEnd && l.status !== 'cancelled'
   )
-  const thisMonthProjects = projects.filter(p =>
-    p.date && p.date >= thisMonthStart && p.date <= thisMonthEnd
+  const rangeProjects = projects.filter(p =>
+    p.date && p.date >= rangeStart && p.date <= rangeEnd
   )
 
-  // KPI 1: ΤΖΙΡΟΣ ΜΗΝΑ — agreed_amount/budget ανεξαρτήτως πληρωμής
-  const tziros = thisMonthLives.reduce((s, l) => s + (l.agreed_amount || 0), 0)
-             + thisMonthProjects.reduce((s, p) => s + (p.budget || 0), 0)
+  const paidLivesInRange = rangeLives.filter(l => l.is_paid)
+  const completedProjectsInRange = rangeProjects.filter(p => p.status === 'Ολοκληρωμένο')
+  const paidLiveIds = new Set(paidLivesInRange.map(l => l.id))
 
-  // KPI 2: ΕΙΣΠΡΑΞΕΙΣ ΜΗΝΑ — μόνο πληρωμένα
-  const paidLivesThisMonth = thisMonthLives.filter(l => l.is_paid)
-  const completedProjectsThisMonth = thisMonthProjects.filter(p => p.status === 'Ολοκληρωμένο')
-  const eispraksis =
-    paidLivesThisMonth.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0) +
-    completedProjectsThisMonth.reduce((s, p) => s + (p.budget || 0), 0)
+  // --- KPI 1: ΤΖΙΡΟΣ ---
+  const tziros_lives = rangeLives.reduce((s, l) => s + (l.agreed_amount || 0), 0)
+  const tziros_projects = rangeProjects.reduce((s, p) => s + (p.budget || 0), 0)
+  const tziros = tziros_lives + tziros_projects
 
-  // KPI 3: ΚΑΘΑΡΟ ΚΕΡΔΟΣ — εισπράξεις μείον κόστη μόνο των πληρωμένων
-  const paidLiveIds = new Set(paidLivesThisMonth.map(l => l.id))
+  // --- KPI 2: ΕΙΣΠΡΑΞΕΙΣ ---
+  const eispraksis_lives = paidLivesInRange.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0)
+  const eispraksis_projects = completedProjectsInRange.reduce((s, p) => s + (p.budget || 0), 0)
+  const eispraksis = eispraksis_lives + eispraksis_projects
+
+  // --- KPI 3: ΚΑΘΑΡΟ ΚΕΡΔΟΣ ---
   const musicianFees = allMusicians
     .filter(m => paidLiveIds.has(m.live_id))
     .reduce((s, m) => s + (m.agreed_fee || 0), 0)
   const liveExpenses = allFinancials
     .filter(f => paidLiveIds.has(f.live_id))
     .reduce((s, f) => s + (f.amount || 0), 0)
-  const projectExpenses = completedProjectsThisMonth.reduce((s, p) => {
+  const projectExpenses = completedProjectsInRange.reduce((s, p) => {
     const total = Object.values(p.expenses || {}).reduce((a: number, b: number) => a + b, 0)
     return s + total
   }, 0)
-  const netProfit = eispraksis - musicianFees - liveExpenses - projectExpenses
+  const netProfit_lives = eispraksis_lives - musicianFees - liveExpenses
+  const netProfit_projects = eispraksis_projects - projectExpenses
+  const netProfit = netProfit_lives + netProfit_projects
 
-  // KPI 4: ΠΡΟΓΡΑΜΜΑΤΙΣΜΕΝΑ ΕΣΟΔΑ — μελλοντικά, απλήρωτα, με συμφωνημένο ποσό
+  // --- KPI 4: ΠΡΟΓΡΑΜΜΑΤΙΣΜΕΝΑ (δεν επηρεάζεται από range) ---
   const futureLives = lives.filter(l =>
     l.date && isAfter(parseISO(l.date), now) && !l.is_paid && l.status !== 'cancelled' && l.agreed_amount != null
   )
@@ -115,10 +162,9 @@ export default function DashboardPage() {
     futureLives.reduce((s, l) => s + (l.agreed_amount || 0), 0) +
     futureProjects.reduce((s, p) => s + (p.budget || 0), 0)
 
-  // Για τον πίνακα Unpaid Lives (παραμένει)
+  // --- Lists (δεν επηρεάζονται από range) ---
   const unpaidLives = lives.filter(l => !l.is_paid && l.status === 'confirmed' && l.agreed_amount)
   const totalUnpaid = unpaidLives.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0)
-
   const upcomingLives = lives
     .filter(l => l.date && isAfter(parseISO(l.date), now) && l.status !== 'cancelled')
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
@@ -135,19 +181,61 @@ export default function DashboardPage() {
       />
 
       <div className="p-5 space-y-4">
-        {/* KPIs */}
+
+        {/* ── Date range filter ── */}
+        <div className="card" style={{ padding: '10px 14px' }}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+              Περίοδος:
+            </span>
+            {PRESETS.map(p => (
+              <button
+                key={p.key}
+                onClick={() => setPreset(p.key)}
+                style={{
+                  fontSize: '0.78rem', padding: '4px 12px', borderRadius: 6, fontWeight: 600,
+                  cursor: 'pointer', border: '1px solid var(--border)',
+                  background: preset === p.key ? 'var(--terra)' : 'var(--bg-overlay)',
+                  color: preset === p.key ? '#fff' : 'var(--text)',
+                  transition: 'background 0.15s',
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+            {preset === 'custom' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <input
+                  type="date" className="input"
+                  style={{ width: 140, fontSize: '0.82rem', padding: '4px 8px' }}
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                />
+                <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>—</span>
+                <input
+                  type="date" className="input"
+                  style={{ width: 140, fontSize: '0.82rem', padding: '4px 8px' }}
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── KPI cards ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard
-            title="🎤 Τζίρος Μήνα"
+            title="🎤 Τζίρος"
             value={formatCurrency(tziros)}
-            sub={`${thisMonthLives.length} lives + ${thisMonthProjects.length} projects`}
+            sub={`${rangeLives.length} lives + ${rangeProjects.length} projects`}
             icon={<TrendingUp size={15} />}
             color="sea"
           />
           <StatCard
-            title="💰 Εισπράξεις Μήνα"
+            title="💰 Εισπράξεις"
             value={formatCurrency(eispraksis)}
-            sub={`${paidLivesThisMonth.length} πληρωμένα`}
+            sub={`${paidLivesInRange.length} πληρωμένα`}
             icon={<TrendingUp size={15} />}
             color="green"
           />
@@ -167,7 +255,70 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Chart + Reminders */}
+        {/* ── Ανάλυση Εσόδων ── */}
+        <div className="card" style={{ padding: '14px 18px' }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 14 }}>
+            Ανάλυση Εσόδων
+          </h2>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '2px solid var(--border)' }}>
+                  <th style={{ textAlign: 'left', padding: '6px 12px 6px 0', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}></th>
+                  <th style={{ textAlign: 'right', padding: '6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    🎵 Lives
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    📁 Projects
+                  </th>
+                  <th style={{ textAlign: 'right', padding: '6px 0 6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Σύνολο
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 12px 8px 0', color: 'var(--text-muted)' }}>Τζίρος</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(tziros_lives)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(tziros_projects)}</td>
+                  <td style={{ padding: '8px 0 8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--sea)' }}>{formatCurrency(tziros)}</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 12px 8px 0', color: 'var(--text-muted)' }}>Εισπράξεις</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(eispraksis_lives)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>{formatCurrency(eispraksis_projects)}</td>
+                  <td style={{ padding: '8px 0 8px 12px', textAlign: 'right', fontWeight: 700, color: 'var(--green)' }}>{formatCurrency(eispraksis)}</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 12px 8px 0', color: 'var(--text-muted)' }}>— Αμοιβές Μουσικών</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--red)' }}>− {formatCurrency(musicianFees)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', color: 'var(--text-muted)' }}>—</td>
+                  <td style={{ padding: '8px 0 8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--red)' }}>− {formatCurrency(musicianFees)}</td>
+                </tr>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  <td style={{ padding: '8px 12px 8px 0', color: 'var(--text-muted)' }}>— Έξοδα Παραγωγής</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--red)' }}>− {formatCurrency(liveExpenses)}</td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--red)' }}>− {formatCurrency(projectExpenses)}</td>
+                  <td style={{ padding: '8px 0 8px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--red)' }}>− {formatCurrency(liveExpenses + projectExpenses)}</td>
+                </tr>
+                <tr style={{ background: 'var(--bg-overlay)' }}>
+                  <td style={{ padding: '10px 12px 10px 0', fontWeight: 700 }}>= Καθαρό Κέρδος</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: netProfit_lives >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {formatCurrency(netProfit_lives)}
+                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: netProfit_projects >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {formatCurrency(netProfit_projects)}
+                  </td>
+                  <td style={{ padding: '10px 0 10px 12px', textAlign: 'right', fontWeight: 800, fontSize: '1rem', color: netProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                    {formatCurrency(netProfit)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* ── Chart + Reminders ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="card lg:col-span-2" style={{ padding: '14px 16px' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 10 }}>
@@ -185,8 +336,7 @@ export default function DashboardPage() {
                 <XAxis dataKey="month" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis
                   tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                  axisLine={false}
-                  tickLine={false}
+                  axisLine={false} tickLine={false}
                   tickFormatter={v => `€${(v / 1000).toFixed(0)}k`}
                   width={36}
                 />
@@ -229,7 +379,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Upcoming Lives */}
+        {/* ── Upcoming Lives ── */}
         <div className="card" style={{ padding: '14px 16px' }}>
           <div className="flex items-center justify-between mb-3">
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700 }}>Επόμενα Lives</h2>
@@ -299,7 +449,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Unpaid Lives */}
+        {/* ── Unpaid Lives ── */}
         {unpaidLives.length > 0 && (
           <div className="card" style={{ padding: '14px 16px', borderColor: 'rgba(232,96,76,0.3)' }}>
             <div className="flex items-center gap-2 mb-3">
