@@ -122,9 +122,9 @@ export default function LiveDetailPage() {
   const [financialCats, setFinancialCats] = useState<string[]>([])
   const [editFinItem, setEditFinItem] = useState<Financial | null>(null)
   const [editMusItem, setEditMusItem] = useState<LiveMusician | null>(null)
-  const [editMusForm, setEditMusForm] = useState({ agreed_fee: '', paid_fee: '', is_paid: false })
+  const [editMusForm, setEditMusForm] = useState({ fee: '', is_paid: false })
 
-  const [musForm, setMusForm] = useState({ musician_id: '', agreed_fee: '' })
+  const [musForm, setMusForm] = useState({ musician_id: '', fee: '' })
   const [finForm, setFinForm] = useState({ category: '', amount: '', description: '', paid_to: '' })
   const [remForm, setRemForm] = useState({ type: '', due_date: '', notes: '' })
 
@@ -194,13 +194,18 @@ export default function LiveDetailPage() {
   async function handleAddMusician(e: React.FormEvent) {
     e.preventDefault()
     const mus = allMusicians.find(m => m.id === musForm.musician_id)
+    const fee = musForm.fee ? parseFloat(musForm.fee) : (mus?.default_fee || null)
     await supabase.from('live_musicians').insert({
-      live_id: id, musician_id: musForm.musician_id,
-      agreed_fee: musForm.agreed_fee ? parseFloat(musForm.agreed_fee) : (mus?.default_fee || null),
+      live_id: id,
+      musician_id: musForm.musician_id,
+      agreed_fee: fee,
+      paid_fee: fee,
       is_paid: false,
     })
     toast('Μουσικός προστέθηκε!', 'success')
-    setShowAddMusician(false); setMusForm({ musician_id: '', agreed_fee: '' }); load()
+    setShowAddMusician(false)
+    setMusForm({ musician_id: '', fee: '' })
+    load()
   }
 
   async function handleToggleMusicianPaid(lm: LiveMusician) {
@@ -211,9 +216,10 @@ export default function LiveDetailPage() {
   async function handleSaveMusician(e: React.FormEvent) {
     e.preventDefault()
     if (!editMusItem) return
+    const fee = editMusForm.fee ? parseFloat(editMusForm.fee) : null
     const { error } = await supabase.from('live_musicians').update({
-      agreed_fee: editMusForm.agreed_fee ? parseFloat(editMusForm.agreed_fee) : null,
-      paid_fee: editMusForm.paid_fee ? parseFloat(editMusForm.paid_fee) : null,
+      agreed_fee: fee,
+      paid_fee: fee,
       is_paid: editMusForm.is_paid,
     }).eq('id', editMusItem.id)
     if (error) { toast('Σφάλμα: ' + error.message, 'error'); return }
@@ -302,7 +308,7 @@ export default function LiveDetailPage() {
   if (!live) return <div className="p-8 text-center" style={{ color: 'var(--text-muted)' }}>Live δεν βρέθηκε</div>
 
   const totalExpenses = financials.reduce((s, f) => s + (f.amount || 0), 0)
-  const totalMusicianFees = liveMusicians.reduce((s, lm) => s + (lm.agreed_fee || 0), 0)
+  const totalMusicianFees = liveMusicians.reduce((s, lm) => s + (lm.agreed_fee || lm.paid_fee || 0), 0)
   const netProfit = (live.agreed_amount || 0) - totalExpenses - totalMusicianFees
 
   return (
@@ -318,10 +324,10 @@ export default function LiveDetailPage() {
               {LIVE_STATUS_LABELS[live.status]}
             </span>
             <a href={buildGoogleCalendarUrl(live)} target="_blank" rel="noopener noreferrer"
-              className="btn btn-secondary btn-sm" title="Προσθήκη στο Google Calendar">
+              className="btn btn-secondary btn-sm">
               <Calendar size={14} />Google Cal
             </a>
-            <button onClick={() => exportIcs(live)} className="btn btn-secondary btn-sm" title="Λήψη .ics">
+            <button onClick={() => exportIcs(live)} className="btn btn-secondary btn-sm">
               <Download size={14} />Export .ics
             </button>
             {editing ? (
@@ -338,7 +344,6 @@ export default function LiveDetailPage() {
         }
       />
 
-      {/* Tabs */}
       <div className="px-6 pt-4">
         <div className="tab-bar" style={{ maxWidth: 640 }}>
           {TABS.map(t => {
@@ -355,6 +360,7 @@ export default function LiveDetailPage() {
       </div>
 
       <div className="p-6">
+
         {/* ==================== TAB: GENERAL ==================== */}
         {tab === 'general' && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -423,7 +429,6 @@ export default function LiveDetailPage() {
               )}
             </div>
 
-            {/* Reminders */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '1.05rem', fontWeight: 700 }}>Υπενθυμίσεις</h3>
@@ -437,7 +442,8 @@ export default function LiveDetailPage() {
                     <div key={r.id} className="flex items-center gap-3 p-3 rounded-lg"
                       style={{ background: 'var(--bg-overlay)', opacity: r.is_done ? 0.6 : 1 }}>
                       <button onClick={() => handleToggleReminder(r)}>
-                        {r.is_done ? <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
+                        {r.is_done
+                          ? <CheckCircle2 size={16} style={{ color: 'var(--green)' }} />
                           : <Circle size={16} style={{ color: 'var(--text-muted)' }} />}
                       </button>
                       <div className="flex-1 min-w-0">
@@ -458,7 +464,6 @@ export default function LiveDetailPage() {
         {/* ==================== TAB: FINANCIAL ==================== */}
         {tab === 'financial' && (
           <div className="space-y-4">
-            {/* KPI cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               {[
                 { label: 'Συμφωνηθέν', value: formatCurrency(live.agreed_amount), color: 'var(--green)' },
@@ -473,7 +478,7 @@ export default function LiveDetailPage() {
               ))}
             </div>
 
-            {/* Profit breakdown */}
+            {/* Ανάλυση Κέρδους */}
             <div className="card" style={{ padding: '14px 18px' }}>
               <h3 style={{ fontFamily: 'var(--font-display)', fontSize: '0.88rem', fontWeight: 700, marginBottom: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Ανάλυση Κέρδους
@@ -501,7 +506,6 @@ export default function LiveDetailPage() {
               </div>
             </div>
 
-            {/* Edit financial fields */}
             {editing && (
               <div className="card grid grid-cols-2 gap-4">
                 <div><label className="label">Συμφωνηθέν (€)</label>
@@ -539,8 +543,10 @@ export default function LiveDetailPage() {
             {!editing && (
               <div className="card">
                 <div className="grid grid-cols-3 gap-4 text-sm">
-                  <div><p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 600 }}>Τρόπος Πληρωμής</p>
-                    <p style={{ fontWeight: 600 }}>{live.payment_method || '—'}</p></div>
+                  <div>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 600 }}>Τρόπος Πληρωμής</p>
+                    <p style={{ fontWeight: 600 }}>{live.payment_method || '—'}</p>
+                  </div>
                   <div className="flex items-center gap-2">
                     {live.is_paid
                       ? <><CheckCircle2 size={16} style={{ color: 'var(--green)' }} /><span style={{ color: 'var(--green)', fontWeight: 700 }}>Εξοφλήθηκε</span></>
@@ -555,7 +561,6 @@ export default function LiveDetailPage() {
               </div>
             )}
 
-            {/* Additional financials */}
             <div className="card">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ fontFamily: 'var(--font-display)', fontWeight: 700 }}>Έξοδα & Χρεώσεις</h3>
@@ -580,12 +585,7 @@ export default function LiveDetailPage() {
                           <div className="flex gap-1">
                             <button onClick={() => {
                               setEditFinItem(f)
-                              setFinForm({
-                                category: f.category || '',
-                                amount: f.amount ? String(f.amount) : '',
-                                description: f.description || '',
-                                paid_to: f.paid_to || '',
-                              })
+                              setFinForm({ category: f.category || '', amount: f.amount ? String(f.amount) : '', description: f.description || '', paid_to: f.paid_to || '' })
                               setShowAddFinancial(true)
                             }} className="btn btn-ghost btn-xs">✏️</button>
                             <button onClick={() => setDeleteFinId(f.id)} className="btn btn-ghost btn-xs"><Trash2 size={12} /></button>
@@ -617,7 +617,7 @@ export default function LiveDetailPage() {
             ) : (
               <table className="w-full text-sm">
                 <thead><tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Μουσικός', 'Ρόλος', 'Συμφ. Αμοιβή', 'Πληρωμένη', 'Πληρώθηκε', ''].map(h =>
+                  {['Μουσικός', 'Ρόλος', 'Αμοιβή', 'Πληρώθηκε', ''].map(h =>
                     <th key={h} className="pb-2 text-left" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600 }}>{h}</th>)}
                 </tr></thead>
                 <tbody>
@@ -625,8 +625,9 @@ export default function LiveDetailPage() {
                     <tr key={lm.id} className="table-row">
                       <td className="py-3" style={{ fontWeight: 700 }}>{lm.musicians?.name}</td>
                       <td className="py-3" style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>{lm.musicians?.role || '—'}</td>
-                      <td className="py-3" style={{ color: 'var(--amber)', fontWeight: 700 }}>{formatCurrency(lm.agreed_fee)}</td>
-                      <td className="py-3" style={{ color: 'var(--green)', fontWeight: 700 }}>{formatCurrency(lm.paid_fee)}</td>
+                      <td className="py-3" style={{ color: 'var(--amber)', fontWeight: 700 }}>
+                        {formatCurrency(lm.agreed_fee || lm.paid_fee)}
+                      </td>
                       <td className="py-3">
                         <button onClick={() => handleToggleMusicianPaid(lm)}
                           className={`badge ${lm.is_paid ? 'badge-paid' : 'badge-unpaid'}`}
@@ -638,8 +639,7 @@ export default function LiveDetailPage() {
                         <div className="flex gap-1">
                           <button onClick={() => {
                             setEditMusForm({
-                              agreed_fee: lm.agreed_fee ? String(lm.agreed_fee) : '',
-                              paid_fee: lm.paid_fee ? String(lm.paid_fee) : '',
+                              fee: String(lm.agreed_fee || lm.paid_fee || ''),
                               is_paid: lm.is_paid,
                             })
                             setEditMusItem(lm)
@@ -652,7 +652,7 @@ export default function LiveDetailPage() {
                   <tr style={{ borderTop: '2px solid var(--border)' }}>
                     <td colSpan={2} className="pt-2 font-bold" style={{ fontSize: '0.82rem' }}>Σύνολο:</td>
                     <td className="pt-2 font-bold" style={{ color: 'var(--amber)' }}>{formatCurrency(totalMusicianFees)}</td>
-                    <td colSpan={3}></td>
+                    <td colSpan={2}></td>
                   </tr>
                 </tbody>
               </table>
@@ -720,8 +720,7 @@ export default function LiveDetailPage() {
               ].map(({ name, label }) => (
                 <div key={name}>
                   <label className="label">Σημειώσεις: {label}</label>
-                  <textarea name={name} className="textarea" rows={2}
-                    defaultValue={(evaluation as any)?.[name] || ''} />
+                  <textarea name={name} className="textarea" rows={2} defaultValue={(evaluation as any)?.[name] || ''} />
                 </div>
               ))}
               <button type="submit" className="btn btn-primary"><Save size={14} />Αποθήκευση</button>
@@ -757,14 +756,14 @@ export default function LiveDetailPage() {
           <div><label className="label">Μουσικός *</label>
             <select required className="select" value={musForm.musician_id} onChange={e => {
               const m = allMusicians.find(x => x.id === e.target.value)
-              setMusForm({ musician_id: e.target.value, agreed_fee: m?.default_fee?.toString() || '' })
+              setMusForm({ musician_id: e.target.value, fee: m?.default_fee?.toString() || '' })
             }}>
               <option value="">— Επιλογή —</option>
               {allMusicians.map(m => <option key={m.id} value={m.id}>{m.name} ({m.role})</option>)}
             </select></div>
           <div><label className="label">Αμοιβή (€)</label>
-            <input type="number" step="0.01" className="input" value={musForm.agreed_fee}
-              onChange={e => setMusForm({ ...musForm, agreed_fee: e.target.value })} /></div>
+            <input type="number" step="0.01" className="input" value={musForm.fee}
+              onChange={e => setMusForm({ ...musForm, fee: e.target.value })} /></div>
           <div className="flex gap-3 justify-end">
             <button type="button" onClick={() => setShowAddMusician(false)} className="btn btn-secondary">Ακύρωση</button>
             <button type="submit" className="btn btn-primary">Προσθήκη</button>
@@ -777,12 +776,9 @@ export default function LiveDetailPage() {
         <form onSubmit={handleSaveMusician} className="space-y-4">
           <div><label className="label">Μουσικός</label>
             <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{editMusItem?.musicians?.name}</p></div>
-          <div><label className="label">Συμφωνηθείσα Αμοιβή (€)</label>
-            <input type="number" step="0.01" className="input" value={editMusForm.agreed_fee}
-              onChange={e => setEditMusForm({ ...editMusForm, agreed_fee: e.target.value })} /></div>
-          <div><label className="label">Πληρωμένη Αμοιβή (€)</label>
-            <input type="number" step="0.01" className="input" value={editMusForm.paid_fee}
-              onChange={e => setEditMusForm({ ...editMusForm, paid_fee: e.target.value })} /></div>
+          <div><label className="label">Αμοιβή (€)</label>
+            <input type="number" step="0.01" className="input" value={editMusForm.fee}
+              onChange={e => setEditMusForm({ ...editMusForm, fee: e.target.value })} /></div>
           <div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="w-4 h-4" checked={editMusForm.is_paid}

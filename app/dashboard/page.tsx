@@ -23,8 +23,6 @@ import type { Live, Reminder, Project } from '@/lib/supabase'
 
 type RangePreset = 'year' | 'last_year' | 'month' | 'last_month' | 'custom'
 
-const _now = new Date()
-
 function getRange(preset: RangePreset, customFrom: string, customTo: string): { start: string; end: string } {
   const n = new Date()
   if (preset === 'year') return {
@@ -61,7 +59,7 @@ export default function DashboardPage() {
   const [reminders, setReminders] = useState<Reminder[]>([])
   const [monthlyData, setMonthlyData] = useState<any[]>([])
   const [projects, setProjects] = useState<Project[]>([])
-  const [allMusicians, setAllMusicians] = useState<{ live_id: string; agreed_fee?: number }[]>([])
+  const [allMusicians, setAllMusicians] = useState<{ live_id: string; agreed_fee?: number; paid_fee?: number }[]>([])
   const [allFinancials, setAllFinancials] = useState<{ live_id: string; amount?: number }[]>([])
 
   const [preset, setPreset] = useState<RangePreset>('year')
@@ -84,7 +82,7 @@ export default function DashboardPage() {
       supabase.from('reminders').select('*, lives(title,date)').eq('is_done', false).order('due_date'),
       supabase.from('settings').select('artist_name').single(),
       supabase.from('projects').select('*').order('date', { ascending: false }),
-      supabase.from('live_musicians').select('live_id, agreed_fee'),
+      supabase.from('live_musicians').select('live_id, agreed_fee, paid_fee'),
       supabase.from('financials').select('live_id, amount'),
     ])
     if (settings?.artist_name) setArtistName(settings.artist_name)
@@ -92,7 +90,7 @@ export default function DashboardPage() {
     setLives(allLives)
     setReminders((remindersData || []) as Reminder[])
     setProjects((projectsData || []) as Project[])
-    setAllMusicians((musiciansData || []) as { live_id: string; agreed_fee?: number }[])
+    setAllMusicians((musiciansData || []) as { live_id: string; agreed_fee?: number; paid_fee?: number }[])
     setAllFinancials((financialsData || []) as { live_id: string; amount?: number }[])
 
     const now = new Date()
@@ -114,7 +112,6 @@ export default function DashboardPage() {
   const now = new Date()
   const { start: rangeStart, end: rangeEnd } = getRange(preset, customFrom, customTo)
 
-  // --- Lives & projects in selected range ---
   const rangeLives = lives.filter(l =>
     l.date && l.date >= rangeStart && l.date <= rangeEnd && l.status !== 'cancelled'
   )
@@ -126,20 +123,20 @@ export default function DashboardPage() {
   const completedProjectsInRange = rangeProjects.filter(p => p.status === 'Ολοκληρωμένο')
   const paidLiveIds = new Set(paidLivesInRange.map(l => l.id))
 
-  // --- KPI 1: ΤΖΙΡΟΣ ---
+  // KPI 1: ΤΖΙΡΟΣ
   const tziros_lives = rangeLives.reduce((s, l) => s + (l.agreed_amount || 0), 0)
   const tziros_projects = rangeProjects.reduce((s, p) => s + (p.budget || 0), 0)
   const tziros = tziros_lives + tziros_projects
 
-  // --- KPI 2: ΕΙΣΠΡΑΞΕΙΣ ---
+  // KPI 2: ΕΙΣΠΡΑΞΕΙΣ
   const eispraksis_lives = paidLivesInRange.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0)
   const eispraksis_projects = completedProjectsInRange.reduce((s, p) => s + (p.budget || 0), 0)
   const eispraksis = eispraksis_lives + eispraksis_projects
 
-  // --- KPI 3: ΚΑΘΑΡΟ ΚΕΡΔΟΣ ---
+  // KPI 3: ΚΑΘΑΡΟ ΚΕΡΔΟΣ — χρησιμοποιεί agreed_fee || paid_fee
   const musicianFees = allMusicians
     .filter(m => paidLiveIds.has(m.live_id))
-    .reduce((s, m) => s + (m.agreed_fee || 0), 0)
+    .reduce((s, m) => s + (m.agreed_fee || m.paid_fee || 0), 0)
   const liveExpenses = allFinancials
     .filter(f => paidLiveIds.has(f.live_id))
     .reduce((s, f) => s + (f.amount || 0), 0)
@@ -151,7 +148,7 @@ export default function DashboardPage() {
   const netProfit_projects = eispraksis_projects - projectExpenses
   const netProfit = netProfit_lives + netProfit_projects
 
-  // --- KPI 4: ΠΡΟΓΡΑΜΜΑΤΙΣΜΕΝΑ (δεν επηρεάζεται από range) ---
+  // KPI 4: ΠΡΟΓΡΑΜΜΑΤΙΣΜΕΝΑ (δεν επηρεάζεται από range)
   const futureLives = lives.filter(l =>
     l.date && isAfter(parseISO(l.date), now) && !l.is_paid && l.status !== 'cancelled' && l.agreed_amount != null
   )
@@ -162,7 +159,6 @@ export default function DashboardPage() {
     futureLives.reduce((s, l) => s + (l.agreed_amount || 0), 0) +
     futureProjects.reduce((s, p) => s + (p.budget || 0), 0)
 
-  // --- Lists (δεν επηρεάζονται από range) ---
   const unpaidLives = lives.filter(l => !l.is_paid && l.status === 'confirmed' && l.agreed_amount)
   const totalUnpaid = unpaidLives.reduce((s, l) => s + ((l.balance || l.agreed_amount) || 0), 0)
   const upcomingLives = lives
@@ -182,7 +178,7 @@ export default function DashboardPage() {
 
       <div className="p-5 space-y-4">
 
-        {/* ── Date range filter ── */}
+        {/* Date range filter */}
         <div className="card" style={{ padding: '10px 14px' }}>
           <div className="flex items-center gap-2 flex-wrap">
             <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
@@ -205,57 +201,35 @@ export default function DashboardPage() {
             ))}
             {preset === 'custom' && (
               <div className="flex items-center gap-2 flex-wrap">
-                <input
-                  type="date" className="input"
+                <input type="date" className="input"
                   style={{ width: 140, fontSize: '0.82rem', padding: '4px 8px' }}
-                  value={customFrom}
-                  onChange={e => setCustomFrom(e.target.value)}
-                />
+                  value={customFrom} onChange={e => setCustomFrom(e.target.value)} />
                 <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>—</span>
-                <input
-                  type="date" className="input"
+                <input type="date" className="input"
                   style={{ width: 140, fontSize: '0.82rem', padding: '4px 8px' }}
-                  value={customTo}
-                  onChange={e => setCustomTo(e.target.value)}
-                />
+                  value={customTo} onChange={e => setCustomTo(e.target.value)} />
               </div>
             )}
           </div>
         </div>
 
-        {/* ── KPI cards ── */}
+        {/* KPI cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <StatCard
-            title="🎤 Τζίρος"
-            value={formatCurrency(tziros)}
+          <StatCard title="🎤 Τζίρος" value={formatCurrency(tziros)}
             sub={`${rangeLives.length} lives + ${rangeProjects.length} projects`}
-            icon={<TrendingUp size={15} />}
-            color="sea"
-          />
-          <StatCard
-            title="💰 Εισπράξεις"
-            value={formatCurrency(eispraksis)}
+            icon={<TrendingUp size={15} />} color="sea" />
+          <StatCard title="💰 Εισπράξεις" value={formatCurrency(eispraksis)}
             sub={`${paidLivesInRange.length} πληρωμένα`}
-            icon={<TrendingUp size={15} />}
-            color="green"
-          />
-          <StatCard
-            title="📈 Καθαρό Κέρδος"
-            value={formatCurrency(netProfit)}
+            icon={<TrendingUp size={15} />} color="green" />
+          <StatCard title="📈 Καθαρό Κέρδος" value={formatCurrency(netProfit)}
             sub="έσοδα − αμοιβές − έξοδα"
-            icon={<TrendingUp size={15} />}
-            color={netProfit >= 0 ? 'amber' : 'terra'}
-          />
-          <StatCard
-            title="🔮 Προγρ. Έσοδα"
-            value={formatCurrency(programmatistaEsoda)}
+            icon={<TrendingUp size={15} />} color={netProfit >= 0 ? 'amber' : 'terra'} />
+          <StatCard title="🔮 Προγρ. Έσοδα" value={formatCurrency(programmatistaEsoda)}
             sub={`${futureLives.length + futureProjects.length} εκκρεμή`}
-            icon={<Clock size={15} />}
-            color="terra"
-          />
+            icon={<Clock size={15} />} color="terra" />
         </div>
 
-        {/* ── Ανάλυση Εσόδων ── */}
+        {/* Ανάλυση Εσόδων */}
         <div className="card" style={{ padding: '14px 18px' }}>
           <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 14 }}>
             Ανάλυση Εσόδων
@@ -264,16 +238,10 @@ export default function DashboardPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '6px 12px 6px 0', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}></th>
-                  <th style={{ textAlign: 'right', padding: '6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    🎵 Lives
-                  </th>
-                  <th style={{ textAlign: 'right', padding: '6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    📁 Projects
-                  </th>
-                  <th style={{ textAlign: 'right', padding: '6px 0 6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    Σύνολο
-                  </th>
+                  <th style={{ textAlign: 'left', padding: '6px 12px 6px 0', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}></th>
+                  <th style={{ textAlign: 'right', padding: '6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>🎵 Lives</th>
+                  <th style={{ textAlign: 'right', padding: '6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>📁 Projects</th>
+                  <th style={{ textAlign: 'right', padding: '6px 0 6px 12px', color: 'var(--text-muted)', fontWeight: 600, fontSize: '0.72rem', textTransform: 'uppercase' }}>Σύνολο</th>
                 </tr>
               </thead>
               <tbody>
@@ -303,22 +271,16 @@ export default function DashboardPage() {
                 </tr>
                 <tr style={{ background: 'var(--bg-overlay)' }}>
                   <td style={{ padding: '10px 12px 10px 0', fontWeight: 700 }}>= Καθαρό Κέρδος</td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: netProfit_lives >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                    {formatCurrency(netProfit_lives)}
-                  </td>
-                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: netProfit_projects >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                    {formatCurrency(netProfit_projects)}
-                  </td>
-                  <td style={{ padding: '10px 0 10px 12px', textAlign: 'right', fontWeight: 800, fontSize: '1rem', color: netProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                    {formatCurrency(netProfit)}
-                  </td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: netProfit_lives >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatCurrency(netProfit_lives)}</td>
+                  <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 700, color: netProfit_projects >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatCurrency(netProfit_projects)}</td>
+                  <td style={{ padding: '10px 0 10px 12px', textAlign: 'right', fontWeight: 800, fontSize: '1rem', color: netProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{formatCurrency(netProfit)}</td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* ── Chart + Reminders ── */}
+        {/* Chart + Reminders */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="card lg:col-span-2" style={{ padding: '14px 16px' }}>
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700, marginBottom: 10 }}>
@@ -334,12 +296,8 @@ export default function DashboardPage() {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis
-                  tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                  axisLine={false} tickLine={false}
-                  tickFormatter={v => `€${(v / 1000).toFixed(0)}k`}
-                  width={36}
-                />
+                <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false}
+                  tickFormatter={v => `€${(v / 1000).toFixed(0)}k`} width={36} />
                 <Tooltip
                   contentStyle={{ background: 'var(--bg-overlay)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.8rem' }}
                   formatter={(v: any) => [formatCurrency(v), 'Έσοδα']}
@@ -350,7 +308,6 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Reminders */}
           <div className="card" style={{ padding: '14px 16px' }}>
             <div className="flex items-center justify-between mb-3">
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700 }}>Υπενθυμίσεις</h2>
@@ -365,12 +322,8 @@ export default function DashboardPage() {
                     <Bell size={12} style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 2 }} />
                     <div className="min-w-0">
                       <p style={{ fontSize: '0.78rem', fontWeight: 600 }} className="truncate">{r.type || r.notes}</p>
-                      {r.lives?.title && (
-                        <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }} className="truncate">{r.lives.title}</p>
-                      )}
-                      {r.due_date && (
-                        <p style={{ fontSize: '0.68rem', color: 'var(--terra)' }}>{formatDate(r.due_date)}</p>
-                      )}
+                      {r.lives?.title && <p style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }} className="truncate">{r.lives.title}</p>}
+                      {r.due_date && <p style={{ fontSize: '0.68rem', color: 'var(--terra)' }}>{formatDate(r.due_date)}</p>}
                     </div>
                   </div>
                 ))}
@@ -379,7 +332,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Upcoming Lives ── */}
+        {/* Upcoming Lives */}
         <div className="card" style={{ padding: '14px 16px' }}>
           <div className="flex items-center justify-between mb-3">
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '0.95rem', fontWeight: 700 }}>Επόμενα Lives</h2>
@@ -392,16 +345,11 @@ export default function DashboardPage() {
           ) : (
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {upcomingLives.map(live => (
-                <Link
-                  key={live.id}
-                  href={`/lives/${live.id}`}
+                <Link key={live.id} href={`/lives/${live.id}`}
                   className="flex items-center gap-3 py-2 table-row"
-                  style={{ display: 'flex', textDecoration: 'none' }}
-                >
-                  <div
-                    className="flex-shrink-0 w-9 h-9 rounded-lg flex flex-col items-center justify-center text-center"
-                    style={{ background: 'var(--terra-glow)', border: '1px solid rgba(232,96,76,0.2)' }}
-                  >
+                  style={{ display: 'flex', textDecoration: 'none' }}>
+                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex flex-col items-center justify-center text-center"
+                    style={{ background: 'var(--terra-glow)', border: '1px solid rgba(232,96,76,0.2)' }}>
                     <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--terra)', lineHeight: 1 }}>
                       {live.date ? format(parseISO(live.date), 'd') : '?'}
                     </span>
@@ -427,17 +375,11 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-2 flex-shrink-0">
                     <span className={`badge badge-${live.status}`}>{LIVE_STATUS_LABELS[live.status]}</span>
                     {live.agreed_amount ? (
-                      <span style={{
-                        fontWeight: 700, fontSize: '0.78rem', color: 'var(--green)',
-                        background: 'var(--green-glow)', padding: '2px 8px', borderRadius: 6,
-                      }}>
+                      <span style={{ fontWeight: 700, fontSize: '0.78rem', color: 'var(--green)', background: 'var(--green-glow)', padding: '2px 8px', borderRadius: 6 }}>
                         {formatCurrency(live.agreed_amount)}
                       </span>
                     ) : (
-                      <span style={{
-                        fontWeight: 600, fontSize: '0.72rem', color: 'var(--amber)',
-                        background: 'var(--amber-glow)', padding: '2px 8px', borderRadius: 6,
-                      }}>
+                      <span style={{ fontWeight: 600, fontSize: '0.72rem', color: 'var(--amber)', background: 'var(--amber-glow)', padding: '2px 8px', borderRadius: 6 }}>
                         Χωρίς ποσό
                       </span>
                     )}
@@ -449,7 +391,7 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* ── Unpaid Lives ── */}
+        {/* Unpaid Lives */}
         {unpaidLives.length > 0 && (
           <div className="card" style={{ padding: '14px 16px', borderColor: 'rgba(232,96,76,0.3)' }}>
             <div className="flex items-center gap-2 mb-3">
@@ -461,12 +403,9 @@ export default function DashboardPage() {
             </div>
             <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
               {unpaidLives.slice(0, 5).map(live => (
-                <Link
-                  key={live.id}
-                  href={`/lives/${live.id}`}
+                <Link key={live.id} href={`/lives/${live.id}`}
                   className="flex items-center justify-between py-2 table-row"
-                  style={{ display: 'flex', textDecoration: 'none' }}
-                >
+                  style={{ display: 'flex', textDecoration: 'none' }}>
                   <div className="flex items-center gap-2">
                     <Music2 size={13} color="var(--text-muted)" />
                     <div>
@@ -503,9 +442,7 @@ function StatCard({ title, value, sub, icon, color }: {
   return (
     <div className={`stat-card ${color} animate-in`} style={{ padding: '12px 14px' }}>
       <div className="flex items-center justify-between mb-2">
-        <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-          {title}
-        </p>
+        <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{title}</p>
         <div className="w-7 h-7 rounded-md flex items-center justify-center"
           style={{ background: colors[color].bg, color: colors[color].text }}>
           {icon}
